@@ -38,11 +38,22 @@
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div style="font-family:sans-serif;padding:40px;text-align:center;color:#888;">Loading Expense Ledger…</div></div>
 
 <script>
   window.__cloudEnabled = false;
   window.__db = null;
+  window.addEventListener("error", function(e){
+    var root = document.getElementById("root");
+    if (root && !window.__appRendered) {
+      root.innerHTML = '<div style="font-family:sans-serif;padding:24px;max-width:600px;margin:0 auto;">' +
+        '<h2 style="color:#b91c1c;">The app couldn\'t start</h2>' +
+        '<p>Please copy this and share it so it can be fixed:</p>' +
+        '<pre style="background:#f3f4f6;padding:12px;border-radius:8px;white-space:pre-wrap;font-size:12px;">' +
+        (e.message || "Unknown error") + (e.filename ? ("\nin " + e.filename + ":" + e.lineno) : "") +
+        '</pre></div>';
+    }
+  });
   try {
     if (typeof firebaseConfig !== "undefined" && firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
       firebase.initializeApp(firebaseConfig);
@@ -1173,7 +1184,18 @@ function ExpenseTracker(){
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<ExpenseTracker />);
+try {
+  ReactDOM.createRoot(document.getElementById("root")).render(<ExpenseTracker />);
+  window.__appRendered = true;
+} catch (err) {
+  document.getElementById("root").innerHTML =
+    '<div style="font-family:sans-serif;padding:24px;max-width:600px;margin:0 auto;">' +
+    '<h2 style="color:#b91c1c;">Something went wrong loading the app</h2>' +
+    '<p>Please copy the text below and share it so this can be fixed:</p>' +
+    '<pre style="background:#f3f4f6;padding:12px;border-radius:8px;white-space:pre-wrap;font-size:12px;">' +
+    (err && err.stack ? err.stack : String(err)) + '</pre></div>';
+  console.error(err);
+}
 </script>
 
 <script>
