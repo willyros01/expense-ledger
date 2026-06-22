@@ -1,4 +1,11 @@
-const CACHE_NAME = "expense-ledger-v1";
+// v2 — switched from cache-first to network-first for the app shell.
+// Cache-first was masking every update: as long as this file's own bytes
+// didn't change, the browser never re-ran "install", so index.html stayed
+// stuck on whatever was cached the very first time the app was added to
+// the home screen. Network-first means you always get the latest version
+// when you have a connection, and only fall back to the cache if you're
+// genuinely offline.
+const CACHE_NAME = "expense-ledger-v2";
 const SHELL_FILES = [
   "./",
   "./index.html",
@@ -23,21 +30,18 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Cache-first for the app shell; always go to the network for everything else
-// (CDN libraries, exchange-rate APIs) so data and fonts stay fresh.
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   const isShellFile = SHELL_FILES.some((f) => url.pathname.endsWith(f.replace("./", "")));
   if (event.request.method !== "GET" || !isShellFile) return;
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
-      }).catch(() => cached);
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
