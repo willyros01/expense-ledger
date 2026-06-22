@@ -17,9 +17,9 @@
 <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
 
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js" crossorigin></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" crossorigin></script>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -1196,6 +1196,34 @@ try {
     (err && err.stack ? err.stack : String(err)) + '</pre></div>';
   console.error(err);
 }
+</script>
+
+<script>
+  // Guard: if Babel (or React) didn't load — common on a flaky mobile connection,
+  // since these come from CDNs — the type="text/babel" block below would never run
+  // and you'd get a blank/garbled screen. Detect that and show a clear retry.
+  window.addEventListener("load", function () {
+    setTimeout(function () {
+      if (!window.__appRendered) {
+        var missing = [];
+        if (typeof Babel === "undefined") missing.push("Babel");
+        if (typeof React === "undefined") missing.push("React");
+        if (typeof ReactDOM === "undefined") missing.push("ReactDOM");
+        if (typeof XLSX === "undefined") missing.push("XLSX (export library)");
+        var root = document.getElementById("root");
+        if (root && (missing.length > 0)) {
+          root.innerHTML =
+            '<div style="font-family:sans-serif;padding:24px;max-width:600px;margin:0 auto;">' +
+            '<h2 style="color:#b91c1c;">Couldn\'t load the app\'s libraries</h2>' +
+            '<p>These load from the internet the first time you open the app. This usually means a weak or interrupted connection.</p>' +
+            '<p style="color:#666;font-size:13px;">Didn\'t load: ' + missing.join(", ") + '</p>' +
+            '<button onclick="location.reload()" style="background:#064e3b;color:#fff;border:none;padding:12px 20px;border-radius:8px;font-size:15px;font-weight:600;margin-top:8px;">Reload</button>' +
+            '<p style="color:#888;font-size:12px;margin-top:14px;">Make sure you have a stable Wi-Fi or cellular signal, then tap Reload. Once loaded the first time, it works offline afterward.</p>' +
+            '</div>';
+        }
+      }
+    }, 4000);
+  });
 </script>
 
 <script>
