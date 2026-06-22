@@ -6,16 +6,14 @@
 <title>Expense Ledger</title>
 
 <link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAGmklEQVR4nO3dW2xTdRzA8dNdOulkF2TIZiZk4AZR7mKWbJoYLomSTEJIIGLwRRMvgWceeTTGGBMCXhIv8U0gJDNGjE7jTEwYCEgYZMF0EBC2MRyMdVvHGasPR2qH+22s/d/O/H6e1u50/a/97n9ubReJNjV4wETybA8A7iIOiIgDIuKAiDggIg6IiAMi4oCIOCAqsD2A/6Mvn45MvsDO31JmRjK5CIfPzZgyCInFUIhDu6yzyGQlEeLQSEkWmQwnQhxaKM8ik7FE2FtRT2sZBn5+GjOHSsaetoDuKYSZQxnDZRi4R+JQw3wZBu6XOBSwVYbueyeOXNktQ+sYiCMnLpQR0DES4oCIOLLnzrQRUD4e4siSa2UE1I7K5in7xOEWi/eeoyPvbLA9BO3sHCENdRae0jIWrdm8YsPbnuc1v7fp7ugdJT9T1ZFTC6uVsJehWMTF1VPAdBwzoAy1KxQdaaja8uBlghYUFhVXP7muYsHK2Y9Ux0rmBVe+uOvQ8O3rQ7d7Bv66cvNaR19Xx1B/j91xGt3mYNrwPG/hiheWr3ujIBqbcsmj+18eHujN+o5y3/Jg5jCqZnXTyo27bI/iQRGHOUWx0qeefz190U8mzrTsLy6dv/TZVz3P+3bftlkl8yoeX15V1zinaqm9Yf6LOMyZv7i+oPCh9MX2nz+93N6yaM1LwUV/JJHs6rvZ1XGh7WDpvJqljTs9z/IbFDhCOg05bnDMnlOdeXHw1jVpyf7rnceO7B0euJHL3eW+z0Ic5kQi4x7tqlrXX6DJasWcwf7uzIs1q5uKyyrH7vr3rnDuaBhxmNMdb0uNvRXJy09f82jN2vTXm3YfvNUT77t6vjveduNKu/UNDo/ViklD/T0X2g5K3y2IxuZWL6ut3/bcjvfXv/ZJxYKVBoc2MeIw6lzr52d/+nj0ztDki5XMXdi4/d2qukYzo5IQh2GpP44fPnpgx+/f7+u5eNIfESuJRCKrNu7OL4iaHNx9iMMCP5noPPX1r1/t+eaDzed/+SK4sqfzhD8ymLlYUXH53OplFsZ3D3HYlEql/JFE8PWxI3u/+/CVm10dmQsUlz9mY1z/cGhv5eGt620PYQq6XxroJxMXzxwtr1ySviZz18Y8h+KY8erqt0fy8uOnmv1kQlqmcPzZ2qHxh0YMcyiOUJzQz+UIejRW+sQzW5c07OiOH+/uPN539fzgra70dwuisYoFq2rrt6Wv8UcGey+dzvruOGUfPnn5hVW1Delj52Njo8EXm3Yfum/Jsz9+NOonjQ5uPOKwLC9vgqfATybOtBy43P6D+fFkIg5zzrV+drWjtbyyrmx+bXFZZXRWSVGsLDprdnBCzh8ZHB7o7b/e2Xvp9J8draN3hm2Pl5cJTp/aFxgvXrtl+bo3PaVvTfAUvTuB4xy2peyfYJMQx7Rt2aNyU0BHGiF+UxPGYeaYYZROHorjUPgpcuytWBY/2Rw/2Wx7FBNj5siS2i0PVdR++CRxZM+1PpR/LClxQOTQNof7p+wn5MhH/Oj4NGNmjly58I9zNI3BoZkj1AfXLX4KlL46mTnUsLVxqnXeIg5lzPehe43m0GplBgj6MLCKMbOhw8yhnu4pxNgmMK/n0Ej5FBJkZ2yfn9WKRgrXMlY2eIlDuxwTsXiQnjgMyXyOpwzFkbM2xGGBI8/9lNhbgYg4ICIOiBza5gjpKXvl3DkaxMwBkUMzhzt/MQgwc0BEHBARB0TEARFxQEQcEBEHRMQBEXFARBwQEQdExAERcUDk0FlZXs8RcOfsNDMHRA7NHO78xSDAzAERcUBEHBARB0TEARFxQEQcEBEHRMQBEXFARBwQEQdExAERcUBEHBARB0TEARFxQEQcEBEHRMQBEXFARBwQEQdExAERcUBEHBARB0TEARFxQEQcEBEHRMQBEXFARBwQEQdExAERcUBEHBARB0TEARFxQEQcEBEHRMQBEXFARBwQEQdExAERcUBkNA7+xV/uTD6GzBxhYvivy3QcTB4hEok2NRi7M/7/oxLG/sDY5ggZk4+h0ZkjMK35I/1YcCtvxm9zeNP5DTOX5Fbm5107eysP8nv+dxluZZi1XdnJf1vpu9zKJJvHOVx4fMN+K60sHwQL43zu2q30sX+ENFxbgm7eShP7cXj3HoXpPhbcSjcLxzkQFk7MHHATcUBEHBARB0TEARFxQEQcEBEHRMQBEXFARBwQEQdExAERcUBEHBARB0TEARFxQEQcEBEHRMQBEXFARBwQEQdEfwNcF+M5O8wplwAAAABJRU5ErkJggg==" />
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAA80lEQVR4nGNk87NmoCVgoVD/IhNGODvuzH9MBYxk+wDZaGSAZg0TdU3HlMIeRF/W7MFvwboOVyKdgsUHpJquoO+JpgDZE2QGERwoG/sbuOf55K/FpQBnKuIJccElhezA989vvbp/7t2z6wwMjAwMWFIRTgvwBBRyEMnruYsrGvOJyN89s+73z2+YirEkU4JxgGaHgr7ng4vbkWWRUyo5QcSAGkpopqMBcoIIAnClVLSMRmYQYbUmqGI3A4bXyQwiTIDLWeQHEZFg6PuA0qJi1IJRC0YtIM8CUgsJ/HpxNry+rNkDUU0MA41NlAXUAsMykqkLAFrlYw7bPUDBAAAAAElFTkSuQmCC" />
+
 <meta name="theme-color" content="#064e3b" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Ledger" />
-<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png" />
-<link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png" />
-<link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png" />
-<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
-
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
