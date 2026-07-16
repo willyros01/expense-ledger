@@ -357,7 +357,7 @@ function PageHead({title, currency, rate, rateDate, offline}){
     <div className="pagehead">
       <h1 className="h1">{title}</h1>
       <div className="rateblock">
-        {offline && <div className="offbadge">Offline · saving to this device</div>}
+        {offline && <div className="offbadge">{offline}</div>}
         <div>
           {currencySymbol(currency)}1 = <span className="ratenum">{rate!=null ? rate.toFixed(5) : "…"}</span> CAD
         </div>
@@ -642,8 +642,15 @@ function ExpenseTracker(){
       try {
         const batch = db.batch();
         list.forEach(en=> batch.set(db.collection("expenses").doc(en.id), en));
-        await batch.commit();
-      } catch(e){ showToast("Couldn't save to the cloud — try again"); }
+        // Deliberately not awaited. Firestore writes to its own local cache straight
+        // away and the live listener updates the UI from it, but the commit promise
+        // only settles once the server acknowledges — so awaiting it on a weak or
+        // dropped connection would hang the form on "Converting…" forever.
+        batch.commit().catch(e=>{
+          console.error("Cloud write failed:", e);
+          showToast("Saved on this device — it'll sync when you're back online");
+        });
+      } catch(e){ showToast("Couldn't save — try again"); }
     } else {
       setEntries(prev=>{
         const map = new Map(prev.map(e=>[e.id,e]));
@@ -829,8 +836,12 @@ function ExpenseTracker(){
       try {
         const batch = db.batch();
         record.ids.forEach(id=> batch.delete(db.collection("expenses").doc(id)));
-        await batch.commit();
-      } catch(e){ showToast("Couldn't delete from the cloud — try again"); }
+        // Not awaited, for the same reason as batchWriteEntries above.
+        batch.commit().catch(e=>{
+          console.error("Cloud delete failed:", e);
+          showToast("Deleted here — it'll sync when you're back online");
+        });
+      } catch(e){ showToast("Couldn't delete — try again"); }
     } else {
       setEntries(prev=>{
         const next = prev.filter(en=>!record.ids.includes(en.id));
@@ -1087,6 +1098,30 @@ function ExpenseTracker(){
   const [liveRate, setLiveRate] = useState(null);
   const [liveRateDate, setLiveRateDate] = useState(null);
 
+  // Real connectivity, separate from the manual "Work offline" switch. Without this
+  // the app had no idea the signal had dropped and kept claiming it was syncing.
+  const [netDown, setNetDown] = useState(()=> typeof navigator !== "undefined" && navigator.onLine === false);
+  useEffect(()=>{
+    const up = ()=>setNetDown(false);
+    const down = ()=>setNetDown(true);
+    window.addEventListener("online", up);
+    window.addEventListener("offline", down);
+    return ()=>{ window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+  },[]);
+
+  // What the header badge should say, if anything.
+  const offlineNote = netDown ? "No connection · saved on this device"
+    : (cloudConfigured && isOffline) ? "Offline · saving to this device"
+    : null;
+
+  // Coming back onto the network while sync is enabled should push up anything
+  // that was written locally in the meantime.
+  const mergedOnceRef = useRef(false);
+  useEffect(()=>{
+    if(!netDown && useCloud && mergedOnceRef.current){ mergeOfflineToCloud(); }
+    if(netDown) mergedOnceRef.current = true;
+  },[netDown, useCloud]);
+
   // Header shows the rate for whichever currency you use most (falls back to the form's).
   const displayCurrency = useMemo(()=>{
     if(entries.length===0) return form.currency || "PHP";
@@ -1169,7 +1204,7 @@ function ExpenseTracker(){
       {/* ------------------------------- NEW ------------------------------- */}
       {tab === "new" && (
         <div className="wrap">
-          <PageHead title={editingId ? "Edit" : "New"} currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={cloudConfigured && isOffline} />
+          <PageHead title={editingId ? "Edit" : "New"} currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
 
           <form onSubmit={submitAndReturn}>
             {editingId && (
@@ -1304,7 +1339,7 @@ function ExpenseTracker(){
       {/* ----------------------------- HISTORY ----------------------------- */}
       {tab === "history" && (
         <div className="wrap">
-          <PageHead title="History" currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={cloudConfigured && isOffline} />
+          <PageHead title="History" currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
 
           <div className="filters">
             <input type="search" className="fld" placeholder="Search vendor, category, notes…"
@@ -1357,7 +1392,7 @@ function ExpenseTracker(){
       {/* ----------------------------- SUMMARY ----------------------------- */}
       {tab === "summary" && (
         <div className="wrap">
-          <PageHead title="Summary" currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={cloudConfigured && isOffline} />
+          <PageHead title="Summary" currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
 
           <SectionLabel>By month</SectionLabel>
           <SummaryTable rows={monthRows} />
@@ -1399,15 +1434,21 @@ function ExpenseTracker(){
           <SectionLabel>Cloud sync</SectionLabel>
           <div className="card">
             <div className="lblrow" style={{marginBottom:8}}>
-              <div className="cardtitle" style={{marginBottom:0}}>{merging ? "Syncing…" : useCloud ? "Online" : cloudConfigured ? "Offline mode" : "This device only"}</div>
+              <div className="cardtitle" style={{marginBottom:0}}>{
+                merging ? "Syncing…" : netDown ? "No connection" : useCloud ? "Online" : cloudConfigured ? "Offline mode" : "This device only"
+              }</div>
               <span className="pill" style={
                 merging ? {background:"#FFF3E0", color:"#96620A", borderColor:"#F0DCB4"}
+                : netDown ? {background:"#FFF3E0", color:"#96620A", borderColor:"#F0DCB4"}
                 : useCloud ? {background:"#E7F6EC", color:"#1E7B3A", borderColor:"#BFE5CB"}
                 : {background:"#EFEFF4", color:"#6B6B70", borderColor:"#DFDFE4"}
-              }>{merging ? "syncing" : useCloud ? "syncing on" : cloudConfigured ? "paused" : "local only"}</span>
+              }>{merging ? "syncing" : netDown ? "waiting" : useCloud ? "syncing on" : cloudConfigured ? "paused" : "local only"}</span>
             </div>
             <div className="cardbody">
               {merging ? "Uploading the entries you added offline…"
+                : netDown ? (cloudConfigured
+                    ? "This device has no internet connection right now. Keep adding expenses — they're saved here and will upload by themselves once you're back online."
+                    : "This device has no internet connection right now. Expenses still save fine; only the exchange-rate lookup needs the internet, and it will fall back to the last rate it knows.")
                 : useCloud ? "Entries sync automatically across every device using this app." + (syncError ? " (Trouble reaching the cloud right now — check your connection or Firestore rules.)" : "")
                 : cloudConfigured ? "Entries are saving to this device only. Switch back online and everything added here uploads automatically, with duplicates skipped — nothing is lost either way."
                 : "Data is stored only in this browser, so there's nothing to sync and no offline switch. Part 3 of the deployment guide (optional) turns on shared cloud sync across devices."}
