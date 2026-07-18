@@ -474,6 +474,23 @@ function ExpenseTracker(){
   const [loaded, setLoaded] = useState(false);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [vendors, setVendors] = useState([]);
+
+  // The dropdowns show the union of the stored list and every name that actually
+  // appears in the expenses. The stored lists live in two places (cloud meta docs
+  // vs this device's storage) depending on mode, and historically only one was
+  // read — which made vendors "disappear" after switching modes even though the
+  // expenses still carried their names. Deriving from the entries makes the lists
+  // self-healing: as long as your data exists, so do its vendors and categories.
+  const allVendors = useMemo(()=>{
+    const set = new Set(vendors);
+    entries.forEach(e=>{ if(e.vendor && e.vendor.trim()) set.add(e.vendor.trim()); });
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  },[vendors, entries]);
+  const allCategories = useMemo(()=>{
+    const set = new Set(categories);
+    entries.forEach(e=>{ if(e.category && e.category.trim()) set.add(e.category.trim()); });
+    return Array.from(set);
+  },[categories, entries]);
   const [rateCache, setRateCache] = useState({});
   const [syncError, setSyncError] = useState(false);
   const [isOffline, setIsOffline] = useState(() => cloudConfigured ? load(LS.offlineMode, false) : true);
@@ -695,21 +712,23 @@ function ExpenseTracker(){
 
   function addCategory(){
     const name = newCatText.trim();
-    if(!name || categories.includes(name)) return;
-    writeCategories([...categories,name]); setNewCatText("");
+    if(!name || allCategories.includes(name)) return;
+    writeCategories([...allCategories,name]); setNewCatText("");
   }
   async function renameCategory(oldName,newName){
     const trimmed = newName.trim();
     if(!trimmed || trimmed===oldName) return;
-    await writeCategories(categories.map(c=>c===oldName?trimmed:c));
+    // Base the write on the union, not just the stored list — the old name may
+    // only exist via entries (e.g. after a mode switch or an import).
+    await writeCategories(Array.from(new Set(allCategories.map(c=>c===oldName?trimmed:c))));
     const affected = entries.filter(en=>en.category===oldName).map(en=>({...en,category:trimmed}));
     if(affected.length) await batchWriteEntries(affected);
     showToast(`Renamed category to "${trimmed}"`);
   }
   async function deleteCategory(name){
-    if(categories.length<=1) return showToast("Keep at least one category");
-    const fallback = categories.find(c=>c!==name) || "Other";
-    await writeCategories(categories.filter(c=>c!==name));
+    if(allCategories.length<=1) return showToast("Keep at least one category");
+    const fallback = allCategories.find(c=>c!==name) || "Other";
+    await writeCategories(allCategories.filter(c=>c!==name));
     const affected = entries.filter(en=>en.category===name).map(en=>({...en,category:fallback}));
     if(affected.length) await batchWriteEntries(affected);
     if(form.category===name) setForm(f=>({...f,category:fallback}));
@@ -718,18 +737,23 @@ function ExpenseTracker(){
 
   async function addVendorToList(name){
     const trimmed = (name||"").trim();
-    if(!trimmed || vendors.includes(trimmed)) return;
-    await writeVendors([...vendors,trimmed]);
+    if(!trimmed || allVendors.includes(trimmed)) return;
+    await writeVendors([...allVendors,trimmed]);
   }
   async function renameVendor(oldName,newName){
     const trimmed = newName.trim();
     if(!trimmed || trimmed===oldName) return;
-    await writeVendors(vendors.map(v=>v===oldName?trimmed:v));
+    await writeVendors(Array.from(new Set(allVendors.map(v=>v===oldName?trimmed:v))));
     const affected = entries.filter(en=>en.vendor===oldName).map(en=>({...en,vendor:trimmed}));
     if(affected.length) await batchWriteEntries(affected);
     showToast(`Renamed vendor to "${trimmed}"`);
   }
-  async function deleteVendor(name){ await writeVendors(vendors.filter(v=>v!==name)); showToast(`Removed "${name}" from vendor list`); }
+  async function deleteVendor(name){
+    const usedBy = entries.filter(en=>en.vendor===name).length;
+    if(usedBy>0){ showToast(`"${name}" is on ${usedBy} ${usedBy===1?"expense":"expenses"} — rename it instead, or delete those entries first`); return; }
+    await writeVendors(allVendors.filter(v=>v!==name));
+    showToast(`Removed "${name}" from vendor list`);
+  }
   function handleVendorSelect(e){
     const v = e.target.value;
     if(v==="__new__"){ setShowNewVendor(true); setForm(f=>({...f,vendor:""})); }
@@ -1265,9 +1289,9 @@ function ExpenseTracker(){
                 <button type="button" className="linkbtn" onClick={()=>setShowVendorManager(s=>!s)}>Manage</button>
               </div>
               {!showNewVendor ? (
-                <select className="fld" value={vendors.includes(form.vendor) ? form.vendor : ""} onChange={handleVendorSelect}>
-                  <option value="" disabled>{form.vendor && !vendors.includes(form.vendor) ? form.vendor : "Select vendor…"}</option>
-                  {vendors.map(v=> <option key={v} value={v}>{v}</option>)}
+                <select className="fld" value={allVendors.includes(form.vendor) ? form.vendor : ""} onChange={handleVendorSelect}>
+                  <option value="" disabled>{form.vendor && !allVendors.includes(form.vendor) ? form.vendor : "Select vendor…"}</option>
+                  {allVendors.map(v=> <option key={v} value={v}>{v}</option>)}
                   <option value="__new__">+ Add new vendor…</option>
                 </select>
               ) : (
@@ -1281,8 +1305,8 @@ function ExpenseTracker(){
               )}
               {showVendorManager && (
                 <div className="manager">
-                  {vendors.length===0 && <div className="hint">No vendors yet — add one above.</div>}
-                  {vendors.map(v=>(
+                  {allVendors.length===0 && <div className="hint">No vendors yet — add one above.</div>}
+                  {allVendors.map(v=>(
                     <div key={v} className="managerrow">
                       <input className="fld" value={vendorEdits[v] ?? v} onChange={e=>setVendorEdits({...vendorEdits, [v]:e.target.value})} />
                       <button type="button" className="linkbtn" onClick={()=>{ renameVendor(v, vendorEdits[v] ?? v); setVendorEdits(s=>{const c={...s}; delete c[v]; return c;}); }}>Save</button>
@@ -1297,11 +1321,11 @@ function ExpenseTracker(){
                 <button type="button" className="linkbtn" onClick={()=>setShowCatManager(s=>!s)}>Manage</button>
               </div>
               <select className="fld" value={form.category} onChange={e=>setForm({...form, category:e.target.value})}>
-                {categories.map(c=> <option key={c} value={c}>{c}</option>)}
+                {allCategories.map(c=> <option key={c} value={c}>{c}</option>)}
               </select>
               {showCatManager && (
                 <div className="manager">
-                  {categories.map(c=>(
+                  {allCategories.map(c=>(
                     <div key={c} className="managerrow">
                       <span className="dot" style={{background: colorFor(c)}} />
                       <input className="fld" value={catEdits[c] ?? c} onChange={e=>setCatEdits({...catEdits, [c]:e.target.value})} />
@@ -1350,7 +1374,7 @@ function ExpenseTracker(){
           <div className="filters">
             <select className="fld" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
               <option value="All">All categories</option>
-              {categories.map(c=> <option key={c} value={c}>{c}</option>)}
+              {allCategories.map(c=> <option key={c} value={c}>{c}</option>)}
             </select>
             <select className="fld" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
               <option value="All">All statuses</option>
