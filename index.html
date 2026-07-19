@@ -122,6 +122,15 @@
   .tbl td:first-child{ text-align:left; }
   .tnum{ font-variant-numeric:tabular-nums; }
 
+  .disclose{ color:var(--muted); font-size:11px; margin-left:8px; }
+  .drillrow td{ padding:0 16px 16px; background:#FAFAFC; }
+  .drill{ padding-top:12px; }
+  .drillhead{ font-size:12px; color:var(--muted); font-weight:600; margin-bottom:10px; }
+  .drillcols{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .drilllabel{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  .drillline{ display:flex; justify-content:space-between; gap:10px; font-size:13.5px; font-weight:500; padding:3px 0; }
+  .drillline span:first-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
   .importnote{ font-size:12.5px; line-height:1.5; margin-top:12px; padding:10px 12px; border-radius:10px; }
   .importnote.good{ background:#E7F6EC; color:#1E7B3A; }
   .importnote.bad{ background:var(--red-soft); color:var(--red); }
@@ -1222,6 +1231,29 @@ function ExpenseTracker(){
 
   const undoSecs = pendingDelete ? Math.max(0, Math.ceil((pendingDelete.expiresAt - Date.now())/1000)) : 0;
 
+  // ---- Summary drill-down: tap a category to expand its months and vendors ----
+  const [openCat, setOpenCat] = useState(null);
+  const catDetail = useMemo(()=>{
+    if(!openCat) return null;
+    const list = filtered.filter(e=>e.category===openCat);
+    const months = {}, vens = {};
+    list.forEach(e=>{
+      const ym = e.date.slice(0,7);
+      months[ym] = (months[ym]||0) + e.amountCAD;
+      vens[e.vendor] = (vens[e.vendor]||0) + e.amountCAD;
+    });
+    return {
+      count: list.length,
+      months: Object.entries(months).sort((a,b)=> a[0]<b[0]?1:-1)
+        .map(([ym,amt])=>{ const [y,m]=ym.split("-"); return [new Date(Number(y),Number(m)-1,1).toLocaleDateString("en-CA",{month:"short",year:"numeric"}), amt]; }),
+      vendors: Object.entries(vens).sort((a,b)=>b[1]-a[1]),
+    };
+  },[openCat, filtered]);
+  function drillToHistory(cat){
+    setCategoryFilter(cat);
+    setTab("history");
+  }
+
   // ================================ render ================================
   return (
     <div>
@@ -1431,10 +1463,41 @@ function ExpenseTracker(){
                 <thead><tr><th>Category</th><th>CAD</th></tr></thead>
                 <tbody>
                   {byCategory.map(([c,amt])=>(
-                    <tr key={c}>
-                      <td><span className="dot" style={{background: colorFor(c)}} />{c}</td>
-                      <td className="tnum">{fmtCAD(amt)}</td>
-                    </tr>
+                    <React.Fragment key={c}>
+                      <tr onClick={()=>setOpenCat(openCat===c ? null : c)} style={{cursor:"pointer"}}>
+                        <td>
+                          <span className="dot" style={{background: colorFor(c)}} />{c}
+                          <span className="disclose">{openCat===c ? "▾" : "▸"}</span>
+                        </td>
+                        <td className="tnum">{fmtCAD(amt)}</td>
+                      </tr>
+                      {openCat===c && catDetail && (
+                        <tr className="drillrow">
+                          <td colSpan="2">
+                            <div className="drill">
+                              <div className="drillhead">{catDetail.count} {catDetail.count===1?"entry":"entries"}</div>
+                              <div className="drillcols">
+                                <div>
+                                  <div className="drilllabel">By month</div>
+                                  {catDetail.months.map(([label,v])=>(
+                                    <div key={label} className="drillline"><span>{label}</span><span className="tnum">{fmtCAD(v)}</span></div>
+                                  ))}
+                                </div>
+                                <div>
+                                  <div className="drilllabel">By vendor</div>
+                                  {catDetail.vendors.map(([v,amt2])=>(
+                                    <div key={v} className="drillline"><span>{v}</span><span className="tnum">{fmtCAD(amt2)}</span></div>
+                                  ))}
+                                </div>
+                              </div>
+                              <button className="btn btn-soft" style={{marginTop:12}} onClick={(e)=>{ e.stopPropagation(); drillToHistory(c); }}>
+                                View these in History
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
