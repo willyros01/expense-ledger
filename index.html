@@ -1275,28 +1275,62 @@ function ExpenseTracker(){
 
   // ---- History month filter + "arrived via drill-down" chip ----
   const [monthFilter, setMonthFilter] = useState(null); // "YYYY-MM" or null
+  const [vendorFilter, setVendorFilter] = useState(null); // vendor name or null
   const [drillChip, setDrillChip] = useState(null); // {label} shown at top of History
+
+  // ---- Vendor drill-down: tap a vendor row for its month/category split ----
+  const [openVendor, setOpenVendor] = useState(null);
+  const vendorDetail = useMemo(()=>{
+    if(!openVendor) return null;
+    const list = filtered.filter(e=>e.vendor===openVendor);
+    const months = {}, cats = {};
+    list.forEach(e=>{
+      const ym = e.date.slice(0,7);
+      months[ym] = (months[ym]||0) + e.amountCAD;
+      cats[e.category] = (cats[e.category]||0) + e.amountCAD;
+    });
+    return {
+      count: list.length,
+      months: Object.entries(months).sort((a,b)=> a[0]<b[0]?1:-1).map(([ym,amt])=>[monthLabelOf(ym), amt]),
+      cats: Object.entries(cats).sort((a,b)=>b[1]-a[1]),
+    };
+  },[openVendor, filtered]);
+
   function drillToHistory(cat){
     setCategoryFilter(cat);
     setMonthFilter(null);
+    setVendorFilter(null);
     setDrillChip({ label: cat });
     setTab("history");
   }
   function drillMonthToHistory(ym){
     setMonthFilter(ym);
+    setVendorFilter(null);
     setCategoryFilter("All");
     setDrillChip({ label: monthLabelOf(ym) });
+    setTab("history");
+  }
+  function drillVendorToHistory(v){
+    setVendorFilter(v);
+    setMonthFilter(null);
+    setCategoryFilter("All");
+    setDrillChip({ label: v });
     setTab("history");
   }
   function clearDrill(){
     setDrillChip(null);
     setMonthFilter(null);
+    setVendorFilter(null);
     setCategoryFilter("All");
   }
-  // Month filter applies only to the History list — not to `filtered` itself,
-  // otherwise Summary's own tables would silently shrink to one month whenever
-  // the chip is still set.
-  const histFiltered = useMemo(()=> monthFilter ? filtered.filter(e=>e.date.slice(0,7)===monthFilter) : filtered, [filtered, monthFilter]);
+  // Month/vendor filters apply only to the History list — not to `filtered` itself,
+  // otherwise Summary's own tables would silently shrink whenever the chip is set.
+  const histFiltered = useMemo(()=>{
+    let list = filtered;
+    if(monthFilter) list = list.filter(e=>e.date.slice(0,7)===monthFilter);
+    if(vendorFilter) list = list.filter(e=>e.vendor===vendorFilter);
+    return list;
+  }, [filtered, monthFilter, vendorFilter]);
   const histTotal = useMemo(()=> histFiltered.reduce((s,e)=>s+e.amountCAD,0), [histFiltered]);
 
   // ================================ render ================================
@@ -1455,7 +1489,7 @@ function ExpenseTracker(){
               onClick={()=>{ setSelectMode(s=>!s); clearSelection(); }}>{selectMode ? "Done" : "Select"}</button>
           </div>
           <div className="filters">
-            <select className="fld" value={categoryFilter} onChange={e=>{ setCategoryFilter(e.target.value); setDrillChip(null); setMonthFilter(null); }}>
+            <select className="fld" value={categoryFilter} onChange={e=>{ setCategoryFilter(e.target.value); setDrillChip(null); setMonthFilter(null); setVendorFilter(null); }}>
               <option value="All">All categories</option>
               {allCategories.map(c=> <option key={c} value={c}>{c}</option>)}
             </select>
@@ -1609,7 +1643,41 @@ function ExpenseTracker(){
                 <thead><tr><th>Vendor</th><th>CAD</th></tr></thead>
                 <tbody>
                   {overallByVendor.map(([v,amt])=>(
-                    <tr key={v}><td>{v}</td><td className="tnum">{fmtCAD(amt)}</td></tr>
+                    <React.Fragment key={v}>
+                      <tr onClick={()=>setOpenVendor(openVendor===v ? null : v)} style={{cursor:"pointer"}}>
+                        <td>{v}<span className="disclose">{openVendor===v ? "▾" : "▸"}</span></td>
+                        <td className="tnum">{fmtCAD(amt)}</td>
+                      </tr>
+                      {openVendor===v && vendorDetail && (
+                        <tr className="drillrow">
+                          <td colSpan="2">
+                            <div className="drill">
+                              <div className="drillhead">{vendorDetail.count} {vendorDetail.count===1?"entry":"entries"} at {v}</div>
+                              <div className="drillcols">
+                                <div>
+                                  <div className="drilllabel">By month</div>
+                                  {vendorDetail.months.map(([label,mv])=>(
+                                    <div key={label} className="drillline"><span>{label}</span><span className="tnum">{fmtCAD(mv)}</span></div>
+                                  ))}
+                                </div>
+                                <div>
+                                  <div className="drilllabel">By category</div>
+                                  {vendorDetail.cats.map(([cat,cv])=>(
+                                    <div key={cat} className="drillline">
+                                      <span><span className="dot" style={{background: colorFor(cat)}} />{cat}</span>
+                                      <span className="tnum">{fmtCAD(cv)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <button className="btn btn-soft" style={{marginTop:12}} onClick={(e)=>{ e.stopPropagation(); drillVendorToHistory(v); }}>
+                                View these in History
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -1669,7 +1737,7 @@ function ExpenseTracker(){
           </div>
 
           <div style={{textAlign:"center", color:"#B0B0B4", fontSize:11, fontWeight:600, padding:"22px 0 4px"}}>
-            Expense Ledger · build v11
+            Expense Ledger · build v12
           </div>
         </div>
       )}
