@@ -131,6 +131,11 @@
   .drillline{ display:flex; justify-content:space-between; gap:10px; font-size:13.5px; font-weight:500; padding:3px 0; }
   .drillline span:first-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
+  .drillchip{ display:inline-flex; align-items:center; gap:8px; background:var(--blue-soft); color:var(--blue);
+    border:0; border-radius:20px; padding:8px 16px; font-family:inherit; font-size:13.5px; font-weight:700;
+    cursor:pointer; margin-bottom:12px; }
+  .chipx{ font-size:12px; opacity:.75; }
+
   .importnote{ font-size:12.5px; line-height:1.5; margin-top:12px; padding:10px 12px; border-radius:10px; }
   .importnote.good{ background:#E7F6EC; color:#1E7B3A; }
   .importnote.bad{ background:var(--red-soft); color:var(--red); }
@@ -1249,10 +1254,50 @@ function ExpenseTracker(){
       vendors: Object.entries(vens).sort((a,b)=>b[1]-a[1]),
     };
   },[openCat, filtered]);
+
+  // ---- Month drill-down: tap a month row for its category/vendor split ----
+  const [openMonth, setOpenMonth] = useState(null); // "YYYY-MM"
+  const monthDetail = useMemo(()=>{
+    if(!openMonth) return null;
+    const list = filtered.filter(e=>e.date.slice(0,7)===openMonth);
+    const cats = {}, vens = {};
+    list.forEach(e=>{
+      cats[e.category] = (cats[e.category]||0) + e.amountCAD;
+      vens[e.vendor] = (vens[e.vendor]||0) + e.amountCAD;
+    });
+    return {
+      count: list.length,
+      cats: Object.entries(cats).sort((a,b)=>b[1]-a[1]),
+      vendors: Object.entries(vens).sort((a,b)=>b[1]-a[1]),
+    };
+  },[openMonth, filtered]);
+  function monthLabelOf(ym){ const [y,m]=ym.split("-"); return new Date(Number(y),Number(m)-1,1).toLocaleDateString("en-CA",{month:"short",year:"numeric"}); }
+
+  // ---- History month filter + "arrived via drill-down" chip ----
+  const [monthFilter, setMonthFilter] = useState(null); // "YYYY-MM" or null
+  const [drillChip, setDrillChip] = useState(null); // {label} shown at top of History
   function drillToHistory(cat){
     setCategoryFilter(cat);
+    setMonthFilter(null);
+    setDrillChip({ label: cat });
     setTab("history");
   }
+  function drillMonthToHistory(ym){
+    setMonthFilter(ym);
+    setCategoryFilter("All");
+    setDrillChip({ label: monthLabelOf(ym) });
+    setTab("history");
+  }
+  function clearDrill(){
+    setDrillChip(null);
+    setMonthFilter(null);
+    setCategoryFilter("All");
+  }
+  // Month filter applies only to the History list — not to `filtered` itself,
+  // otherwise Summary's own tables would silently shrink to one month whenever
+  // the chip is still set.
+  const histFiltered = useMemo(()=> monthFilter ? filtered.filter(e=>e.date.slice(0,7)===monthFilter) : filtered, [filtered, monthFilter]);
+  const histTotal = useMemo(()=> histFiltered.reduce((s,e)=>s+e.amountCAD,0), [histFiltered]);
 
   // ================================ render ================================
   return (
@@ -1397,6 +1442,12 @@ function ExpenseTracker(){
         <div className="wrap">
           <PageHead title="History" currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
 
+          {drillChip && (
+            <button className="drillchip" onClick={clearDrill}>
+              Showing: {drillChip.label} <span className="chipx">✕</span>
+            </button>
+          )}
+
           <div className="filters">
             <input type="search" className="fld" placeholder="Search vendor, category, notes…"
               value={search} onChange={e=>setSearch(e.target.value)} />
@@ -1404,7 +1455,7 @@ function ExpenseTracker(){
               onClick={()=>{ setSelectMode(s=>!s); clearSelection(); }}>{selectMode ? "Done" : "Select"}</button>
           </div>
           <div className="filters">
-            <select className="fld" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
+            <select className="fld" value={categoryFilter} onChange={e=>{ setCategoryFilter(e.target.value); setDrillChip(null); setMonthFilter(null); }}>
               <option value="All">All categories</option>
               {allCategories.map(c=> <option key={c} value={c}>{c}</option>)}
             </select>
@@ -1414,8 +1465,8 @@ function ExpenseTracker(){
             </select>
           </div>
 
-          {filtered.length>0 && (
-            <div className="tally">{filtered.length} {filtered.length===1?"entry":"entries"} · {fmtCAD(totalCAD)}</div>
+          {histFiltered.length>0 && (
+            <div className="tally">{histFiltered.length} {histFiltered.length===1?"entry":"entries"} · {fmtCAD(histTotal)}</div>
           )}
 
           {selectMode && selectedCount>0 && (
@@ -1423,7 +1474,7 @@ function ExpenseTracker(){
               <span>{selectedCount} selected</span>
               <div style={{display:"flex", gap:8}}>
                 <button className="btn btn-soft" style={{width:"auto", padding:"8px 14px"}}
-                  onClick={()=>selectAllVisible(filtered.map(f=>f.id), !allVisibleSelected)}>
+                  onClick={()=>selectAllVisible(histFiltered.map(f=>f.id), !allVisibleSelected)}>
                   {allVisibleSelected ? "None" : "All"}
                 </button>
                 <button className="btn btn-danger" style={{width:"auto", padding:"8px 14px"}} onClick={deleteSelected}>Delete</button>
@@ -1432,11 +1483,11 @@ function ExpenseTracker(){
           )}
 
           {!loaded ? <div className="card empty">Loading…</div>
-            : filtered.length===0 ? (
+            : histFiltered.length===0 ? (
               <div className="card empty">
                 {entries.length===0 ? "No expenses yet. Add your first one from the New tab." : "Nothing matches your search or filters."}
               </div>
-            ) : filtered.map(en=>(
+            ) : histFiltered.map(en=>(
               <ExpenseCard key={en.id} en={en}
                 selectMode={selectMode} selected={!!selected[en.id]} onToggle={()=>toggleSelect(en.id)}
                 onEdit={editFromHistory} onShare={shareEntry} onDelete={deleteEntry}
@@ -1451,7 +1502,54 @@ function ExpenseTracker(){
           <PageHead title="Summary" currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
 
           <SectionLabel>By month</SectionLabel>
-          <SummaryTable rows={monthRows} />
+          {monthRows.length===0 ? <div className="card empty">Nothing to summarise yet.</div> : (
+            <div className="card tblcard">
+              <table className="tbl">
+                <thead><tr><th>Period</th><th>#</th><th>Original</th><th>CAD</th></tr></thead>
+                <tbody>
+                  {monthRows.map(r=>(
+                    <React.Fragment key={r.key}>
+                      <tr onClick={()=>setOpenMonth(openMonth===r.key ? null : r.key)} style={{cursor:"pointer"}}>
+                        <td>{r.label}<span className="disclose">{openMonth===r.key ? "▾" : "▸"}</span></td>
+                        <td>{r.count}</td>
+                        <td className="tnum">{r.original}</td>
+                        <td className="tnum">{fmtCAD(r.cad)}</td>
+                      </tr>
+                      {openMonth===r.key && monthDetail && (
+                        <tr className="drillrow">
+                          <td colSpan="4">
+                            <div className="drill">
+                              <div className="drillhead">{monthDetail.count} {monthDetail.count===1?"entry":"entries"} in {r.label}</div>
+                              <div className="drillcols">
+                                <div>
+                                  <div className="drilllabel">By category</div>
+                                  {monthDetail.cats.map(([cat,v])=>(
+                                    <div key={cat} className="drillline">
+                                      <span><span className="dot" style={{background: colorFor(cat)}} />{cat}</span>
+                                      <span className="tnum">{fmtCAD(v)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div>
+                                  <div className="drilllabel">By vendor</div>
+                                  {monthDetail.vendors.map(([v,amt2])=>(
+                                    <div key={v} className="drillline"><span>{v}</span><span className="tnum">{fmtCAD(amt2)}</span></div>
+                                  ))}
+                                </div>
+                              </div>
+                              <button className="btn btn-soft" style={{marginTop:12}} onClick={(e)=>{ e.stopPropagation(); drillMonthToHistory(r.key); }}>
+                                View these in History
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <SectionLabel>By year</SectionLabel>
           <SummaryTable rows={yearRows} />
