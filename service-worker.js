@@ -5,7 +5,7 @@
 // the home screen. Network-first means you always get the latest version
 // when you have a connection, and only fall back to the cache if you're
 // genuinely offline.
-const CACHE_NAME = "expense-ledger-v12";
+const CACHE_NAME = "expense-ledger-v13";
 const SHELL_FILES = [
   "./",
   "./index.html",
