@@ -14,10 +14,10 @@
 // ============================================================
 
 const firebaseConfig = {
-  apiKey: "AIzaSyChAxv9kKBtKBrgMwAZAvkfvdW3Qr4Q6CU",
-  authDomain: "expense-ledger-49311.firebaseapp.com",
-  projectId: "expense-ledger-49311",
-  storageBucket: "expense-ledger-49311.firebasestorage.app",
-  messagingSenderId: "367589055153",
-  appId: "1:367589055153:web:63a1760422075d5950e090"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
 };
