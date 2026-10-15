@@ -1,3 +1,12 @@
+## Repository status update — 2026-10-15 (historical deployment guide)
+
+This guide is the **older Expense Ledger web/PWA deployment procedure** and must **not** be followed as the current SpendRecorder iOS/Android installation plan. SpendRecorder is maintained independently in `willyros01/spendrecorder`: `main` contains iOS/TestFlight plus web baseline; `android` contains its signed **1.0.2** Android/Fire migration with **local SQLite** and **no Firebase**. The Android branch documents native receipt-camera and CSV/XLSX Downloads improvements whose latest physical-device acceptance remains pending. Those changes do **not** authorize modifying or migrating Expense Ledger data.
+
+Preserve `expense-ledger/main` and its existing user data; owner development freeze applies. The Firebase instructions and other choices below remain historical for this older app, not the recommended current SpendRecorder deployment method. Documentation only; no hosting or source changes.
+
+---
+
+
 # Deploying Your Expense Ledger as a Shared iPhone App
 
 > **A fully illustrated, more detailed version of this guide is included as `Expense-Ledger-Deployment-Guide.pdf`** — start there if you'd like screenshots alongside every step. This file remains as a quick-reference backup.
