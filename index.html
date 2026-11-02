@@ -279,7 +279,7 @@ function load(key, fallback) { try { const v = localStorage.getItem(key); return
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; } }
 
 function emptyForm(defaultName, defaultCategory) {
-  return { date: new Date().toISOString().slice(0,10), amount:"", currency:"PHP", vendor:"", category: defaultCategory || "Other", comments:"", submittedBy: defaultName||"", receipt:null };
+  return { date: new Date().toISOString().slice(0,10), amount:"", currency:"CAD", vendor:"", category: defaultCategory || "Other", comments:"", submittedBy: defaultName||"", receipt:null };
 }
 // Pinned to en-CA rather than the device locale, otherwise the same expense renders
 // differently per phone (on a US-locale device USD collapses to a bare "$", which is
@@ -1771,7 +1771,7 @@ function ExpenseTracker(){
           </div>
 
           <div style={{textAlign:"center", color:"var(--stamp)", fontSize:11, fontWeight:600, padding:"22px 0 4px"}}>
-            Expense Ledger · build v13
+            Expense Ledger · build v14
           </div>
         </div>
       )}
