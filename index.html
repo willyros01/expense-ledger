@@ -529,6 +529,16 @@ function ExpenseTracker(){
   // read — which made vendors "disappear" after switching modes even though the
   // expenses still carried their names. Deriving from the entries makes the lists
   // self-healing: as long as your data exists, so do its vendors and categories.
+  // Home and recent currencies, like SpendRecorder: C$ first, then the currencies of
+  // your most recently added expenses. Derived from the saved entries themselves, so
+  // nothing extra is stored and the list can never go stale or be lost.
+  const recentCurrencies = useMemo(()=>{
+    const out = ["CAD"];
+    [...entries].sort((x,y)=>(y.createdAt||0)-(x.createdAt||0)).forEach(e=>{
+      if(out.length<6 && e.currency && CURRENCIES.some(c=>c[0]===e.currency) && !out.includes(e.currency)) out.push(e.currency);
+    });
+    return out;
+  },[entries]);
   const allVendors = useMemo(()=>{
     const set = new Set(vendors);
     entries.forEach(e=>{ if(e.vendor && e.vendor.trim()) set.add(e.vendor.trim()); });
@@ -1415,7 +1425,12 @@ function ExpenseTracker(){
               <div style={{display:"flex", gap:8}}>
                 <select className="fld" style={{width:104, flex:"0 0 auto"}} value={form.currency}
                   onChange={e=>setForm({...form, currency:e.target.value})}>
-                  {CURRENCIES.map(([code])=> <option key={code} value={code}>{code}</option>)}
+                  <optgroup label="Home and recent">
+                    {recentCurrencies.map(code=> <option key={"r-"+code} value={code}>{code}</option>)}
+                  </optgroup>
+                  <optgroup label="All currencies">
+                    {CURRENCIES.filter(([code])=>!recentCurrencies.includes(code)).map(([code])=> <option key={code} value={code}>{code}</option>)}
+                  </optgroup>
                 </select>
                 <input type="number" inputMode="decimal" step="0.01" min="0" placeholder="0.00" className="fld"
                   value={form.amount} onChange={e=>setForm({...form, amount:e.target.value})} />
@@ -1771,7 +1786,7 @@ function ExpenseTracker(){
           </div>
 
           <div style={{textAlign:"center", color:"var(--stamp)", fontSize:11, fontWeight:600, padding:"22px 0 4px"}}>
-            Expense Ledger · build v14
+            Expense Ledger · build v15
           </div>
         </div>
       )}
