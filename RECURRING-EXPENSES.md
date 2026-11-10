@@ -82,3 +82,6 @@ cover every schedule field, disabled state, next-date preservation, unchanged
 amount/history, real stale edits and duplicate confirmations. No user expense
 records are modified by the fix or its tests.
 Reference: https://firebase.google.com/docs/firestore/manage-data/data-types
+
+The recurring script URL is versioned (`recurring.js?v=17`) and the same URL is
+pre-cached by the v17 service worker, avoiding an older browser-cached engine.

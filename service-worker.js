@@ -10,7 +10,7 @@ const SHELL_FILES = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./recurring.js",
+  "./recurring.js?v=17",
 ];
 
 self.addEventListener("install", (event) => {
