@@ -775,7 +775,7 @@ function ExpenseTracker(){
           tx.set(rootRef,{...advanced,updatedAt:Date.now()});
         } else if(expected){
           const existing=await tx.get(entryRef);
-          if(!existing.exists || JSON.stringify(existing.data().recurrence||null)!==JSON.stringify(expected.recurrence||null))
+          if(!existing.exists || !Recurring.sameSchedule(existing.data().recurrence,expected.recurrence))
             throw new Error("This schedule changed on another device. Reopen the expense and try again.");
         }
         tx.set(entryRef,entry);
@@ -1935,7 +1935,7 @@ function ExpenseTracker(){
           </div>
 
           <div style={{textAlign:"center", color:"var(--stamp)", fontSize:11, fontWeight:600, padding:"22px 0 4px"}}>
-            Expense Ledger · build v16
+            Expense Ledger · build v17
           </div>
         </div>
       )}

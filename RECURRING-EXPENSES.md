@@ -66,3 +66,19 @@ Keep the metadata column intact if you intend to restore recurring schedules.
 - JSX compilation and JavaScript syntax checks; service-worker cache bumped to
   v16 and includes recurring.js. No Firebase rules, configuration or other app
   repositories changed.
+
+## Build v17 correction — 2026-11-10
+
+Turning repeating off could incorrectly report that another device changed the
+schedule. The edit transaction compared JSON strings, whose object field order
+could differ between a local Firestore snapshot and a server map. Firestore
+stores map keys in sorted order. The new comparison checks the flat map's full
+key set and values independently of insertion order. Real changed, missing or
+additional fields still trigger conflict protection.
+
+A regression test first reproduced the exact reported error using differently
+ordered server fields, then passed with the correction. Additional assertions
+cover every schedule field, disabled state, next-date preservation, unchanged
+amount/history, real stale edits and duplicate confirmations. No user expense
+records are modified by the fix or its tests.
+Reference: https://firebase.google.com/docs/firestore/manage-data/data-types

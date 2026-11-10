@@ -38,6 +38,13 @@
   }
   function label(s){try{validate(s);return s.every===1?'Every '+({days:'day',weeks:'week',months:'month',years:'year'}[s.unit]):'Every '+s.every+' '+s.unit;}catch(e){return 'Invalid schedule — edit to fix';}}
   function active(s){try{validate(s);date(s.nextDate);return s.enabled===true;}catch(e){return false;}}
+  // Firestore sorts map keys. Compare the flat schedule's field values rather
+  // than JSON insertion order; still reject changed, missing or added fields.
+  function sameSchedule(a,b){
+    if(a==null||b==null)return a==null&&b==null;
+    const ak=Object.keys(a).sort(),bk=Object.keys(b).sort();
+    return ak.length===bk.length&&ak.every((key,i)=>key===bk[i]&&a[key]===b[key]);
+  }
   function occurrenceId(rootId,due){date(due);return 'repeat-'+rootId+'-'+due;}
   function advance(root,due){
     if(!root||!active(root.recurrence)||root.recurrence.nextDate!==due)throw Error('This scheduled date has already been reviewed or the schedule changed. Reopen it from History.');
@@ -51,5 +58,5 @@
     const after=old&&old.lastDate>s.anchor?old.lastDate:s.anchor;
     return {...s,enabled:!!enabled,lastDate:old&&old.lastDate||s.anchor,nextDate:unchanged&&old.nextDate?old.nextDate:next(s,after)};
   }
-  return {today,date,spec,preset,next,label,active,occurrenceId,advance,edited};
+  return {today,date,spec,preset,next,label,active,sameSchedule,occurrenceId,advance,edited};
 });
