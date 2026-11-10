@@ -24,7 +24,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
-<script src="recurring.js?v=17"></script>
+<script src="recurring.js?v=18"></script>
 
 <style>
   :root{
@@ -201,10 +201,6 @@
   .recurring-options .fld{font-size:22px;min-height:54px;margin-top:8px;}
   .recurring-options .lbl{font-size:21px;margin-top:14px;}
   .recurring-options .hint,.recurring-note{font-size:19px;line-height:1.5;margin-top:10px;}
-  .recurring-due{margin-bottom:14px;border:1px solid var(--blue);}
-  .recurring-due .btn{font-size:21px;min-height:52px;margin-top:12px;}
-  .recurring-due .cardtitle{font-size:23px;}
-  .recurring-due .due-item{border-top:1px solid var(--line);padding-top:12px;margin-top:12px;}
   .toast{ position:fixed; left:50%; transform:translateX(-50%); bottom:calc(78px + env(safe-area-inset-bottom));
     background:var(--toast-bg); color:var(--toast-fg); padding:11px 18px; border-radius:22px; font-size:14px; font-weight:600;
     z-index:46; max-width:calc(100% - 32px); text-align:center; }
@@ -493,7 +489,7 @@ function ExpenseCard({en, selectMode, selected, onToggle, onEdit, onShare, onDel
       </div>
       {en.comments && <div className="exp-note">{en.comments}</div>}
       {en.recurrence && <div className="recurring-note">↻ {Recurring.label(en.recurrence)} · {en.recurrence.enabled ? "Next due: "+en.recurrence.nextDate : "Repeating off"}</div>}
-      {en.recurrenceId && !en.recurrence && <div className="recurring-note">Added after recurring expense review</div>}
+      {en.recurrenceId && !en.recurrence && <div className="recurring-note">Recurring expense</div>}
       <div className="btnrow">
         <button className="btn btn-soft" onClick={()=>onEdit(en)}>Edit</button>
         <button className="btn btn-soft" onClick={()=>onShare(en)}>Share</button>
@@ -580,13 +576,17 @@ function ExpenseTracker(){
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
-  const [reviewing, setReviewing] = useState(null);
+  const autoPostLock=useRef(false);
+  const autoRetryTimer=useRef(null);
+  const autoContext=useRef(null);
+  const [autoTick,setAutoTick]=useState(0);
+  const [autoError,setAutoError]=useState("");
   const [localToday, setLocalToday] = useState(Recurring.today());
   useEffect(()=>{
-    const refresh=()=>setLocalToday(Recurring.today());
+    const refresh=()=>{setLocalToday(Recurring.today());setAutoTick(n=>n+1);};
     const timer=setInterval(refresh,60000);
-    window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);
-    return ()=>{clearInterval(timer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh);};
+    window.addEventListener("focus",refresh);window.addEventListener("online",refresh);document.addEventListener("visibilitychange",refresh);
+    return ()=>{clearInterval(timer);window.removeEventListener("focus",refresh);window.removeEventListener("online",refresh);document.removeEventListener("visibilitychange",refresh);clearTimeout(autoRetryTimer.current);autoContext.current=null;};
   },[]);
   const [imgError, setImgError] = useState("");
 
@@ -739,7 +739,12 @@ function ExpenseTracker(){
     if(useCloud){
       try {
         const batch = db.batch();
-        list.forEach(en=> batch.set(db.collection("expenses").doc(en.id), en));
+        list.forEach(en=>{
+          if(en.recurrence && entriesRef.current.some(x=>x.id===en.id&&x.recurrence)){
+            const {recurrence,...fields}=en;
+            batch.set(db.collection("expenses").doc(en.id),fields,{merge:true});
+          }else batch.set(db.collection("expenses").doc(en.id),en);
+        });
         // Deliberately not awaited. Firestore writes to its own local cache straight
         // away and the live listener updates the UI from it, but the commit promise
         // only settles once the server acknowledges — so awaiting it on a weak or
@@ -760,20 +765,12 @@ function ExpenseTracker(){
   },[useCloud]);
   const writeEntry = useCallback((entry)=> batchWriteEntries([entry]), [batchWriteEntries]);
 
-  async function saveRecurringEntry(entry, expected, review){
+  async function saveRecurringEntry(entry, expected){
     if(useCloud){
       if(navigator.onLine===false) throw new Error("Reconnect to save a shared recurring expense. Your form is still here.");
       const entryRef=db.collection("expenses").doc(entry.id);
       await db.runTransaction(async tx=>{
-        if(review){
-          const rootRef=db.collection("expenses").doc(review.rootId);
-          const rootDoc=await tx.get(rootRef);
-          const entryDoc=await tx.get(entryRef);
-          const root=rootDoc.exists ? rootDoc.data() : null;
-          const advanced=Recurring.advance(root,review.dueDate);
-          if(entryDoc.exists) throw new Error("This scheduled expense is already recorded. Reopen History.");
-          tx.set(rootRef,{...advanced,updatedAt:Date.now()});
-        } else if(expected){
+        if(expected){
           const existing=await tx.get(entryRef);
           if(!existing.exists || !Recurring.sameSchedule(existing.data().recurrence,expected.recurrence))
             throw new Error("This schedule changed on another device. Reopen the expense and try again.");
@@ -781,31 +778,51 @@ function ExpenseTracker(){
         tx.set(entryRef,entry);
       });
     } else {
-      const list=entriesRef.current;
-      let next;
-      if(review){
-        const root=list.find(x=>x.id===review.rootId);
-        const advanced=Recurring.advance(root,review.dueDate);
-        if(list.some(x=>x.id===entry.id)) throw new Error("This scheduled expense is already recorded.");
-        next=list.map(x=>x.id===review.rootId?{...advanced,updatedAt:Date.now()}:x).concat(entry);
-      } else {
-        if(expected && !list.some(x=>x.id===expected.id)) throw new Error("This expense was deleted. Reopen History.");
-        next=list.filter(x=>x.id!==entry.id).concat(entry);
-      }
-      if(!save(LS.expenses,next)) throw new Error("Storage is full or unavailable. Nothing was saved.");
-      entriesRef.current=next;setEntries(next);
+      const writeLocal=()=>{
+        const list=load(LS.expenses,[]).map(normalizeEntry);
+        const current=expected?list.find(x=>x.id===expected.id):null;
+        if(expected && (!current||!Recurring.sameSchedule(current.recurrence,expected.recurrence)))
+          throw new Error("This schedule changed in another tab. Reopen the expense and try again.");
+        const next=list.filter(x=>x.id!==entry.id).concat(entry);
+        if(!save(LS.expenses,next)) throw new Error("Storage is full or unavailable. Nothing was saved.");
+        entriesRef.current=next;setEntries(next);
+      };
+      if(navigator.locks)await navigator.locks.request("expense-ledger-recurring",writeLocal);else writeLocal();
     }
   }
 
-  function reviewRecurring(root){
-    if(submitLock.current) return;
-    if(cloudConfigured && !useCloud){showToast("Switch off Work offline to review a shared recurring expense.");return;}
-    if(!Recurring.active(root.recurrence)) return;
-    setEditingId(null);setReviewing({rootId:root.id,dueDate:root.recurrence.nextDate});
-    setForm({...emptyForm(root.submittedBy,root.category),date:root.recurrence.nextDate,amount:String(root.amount),currency:root.currency,
-      vendor:root.vendor,category:root.category,comments:root.comments||"",submittedBy:root.submittedBy||"",receipt:null,
-      recurring:true,frequency:Recurring.preset(root.recurrence),repeatEvery:root.recurrence.every,repeatUnit:root.recurrence.unit});
-    setShowNewVendor(false);setFormError("");setTab("new");window.scrollTo({top:0,behavior:"smooth"});
+  async function postRecurringExpense(rootId,dueDate,quote){
+    const makePlan=(root,existing)=>{
+      if(!root||!Recurring.active(root.recurrence)||root.recurrence.nextDate!==dueDate||root.currency!==quote.currency)
+        return {root,posted:0};
+      const plan=Recurring.autoPost(root,dueDate,quote,existing);
+      return {...plan,posted:plan.entry?1:0};
+    };
+    if(useCloud){
+      const rootRef=db.collection("expenses").doc(rootId);
+      const occurrenceRef=db.collection("expenses").doc(Recurring.occurrenceId(rootId,dueDate));
+      return db.runTransaction(async tx=>{
+        const rootDoc=await tx.get(rootRef);
+        const occurrenceDoc=await tx.get(occurrenceRef);
+        const result=makePlan(rootDoc.exists?rootDoc.data():null,occurrenceDoc.exists);
+        if(!Object.prototype.hasOwnProperty.call(result,"entry")) return result;
+        tx.set(rootRef,result.root);
+        if(result.entry)tx.set(occurrenceRef,result.entry);
+        return {root:result.root,posted:result.posted};
+      });
+    }
+    const writeLocal=()=>{
+      // Read the current committed snapshot inside a browser-wide lock so two
+      // open tabs cannot each post from an old in-memory copy.
+      const list=load(LS.expenses,[]).map(normalizeEntry);
+      const result=makePlan(list.find(x=>x.id===rootId),list.some(x=>x.id===Recurring.occurrenceId(rootId,dueDate)));
+      if(!Object.prototype.hasOwnProperty.call(result,"entry")) return result;
+      const next=list.map(x=>x.id===rootId?result.root:x).concat(result.entry?[result.entry]:[]);
+      if(!save(LS.expenses,next))throw new Error("Storage is full or unavailable. Nothing was saved.");
+      entriesRef.current=next;setEntries(next);
+      return {root:result.root,posted:result.posted};
+    };
+    return navigator.locks?navigator.locks.request("expense-ledger-recurring",writeLocal):writeLocal();
   }
 
   const writeCategories = useCallback(async (next)=>{
@@ -897,14 +914,14 @@ function ExpenseTracker(){
   }
 
   function startEdit(entry){
-    setReviewing(null);setEditingId(entry.id);
+    setEditingId(entry.id);
     setForm({ date:entry.date, amount:String(entry.amount), currency:entry.currency||"PHP", vendor:entry.vendor, category:entry.category, comments:entry.comments||"", submittedBy:entry.submittedBy||"", receipt:entry.receipt||null,
       recurring:!!(entry.recurrence && entry.recurrence.enabled),frequency:entry.recurrence?Recurring.preset(entry.recurrence):"monthly",
       repeatEvery:entry.recurrence?entry.recurrence.every:1,repeatUnit:entry.recurrence?entry.recurrence.unit:"days" });
     setShowNewVendor(false); setSubmittedByTouched(true); setFormError("");
     window.scrollTo({top:0,behavior:"smooth"});
   }
-  function cancelEdit(){ setReviewing(null);setEditingId(null); setForm(emptyForm(defaultSubmittedBy,categories[0])); setSubmittedByTouched(false); setFormError(""); }
+  function cancelEdit(){ setEditingId(null); setForm(emptyForm(defaultSubmittedBy,categories[0])); setSubmittedByTouched(false); setFormError(""); }
 
   async function handleReceiptChange(e){
     const file = e.target.files && e.target.files[0];
@@ -928,7 +945,7 @@ function ExpenseTracker(){
     try {
       Recurring.date(form.date);
       if(editingId && !old) throw new Error("This expense no longer exists.");
-      if(!reviewing && (form.recurring || (old && old.recurrence))){
+      if(form.recurring || (old && old.recurrence)){
         const spec=form.recurring?Recurring.spec(form.frequency,form.repeatEvery,form.repeatUnit,form.date)
           :{...old.recurrence,anchor:form.date};
         schedule=Recurring.edited(old&&old.recurrence,spec,form.recurring);
@@ -938,28 +955,25 @@ function ExpenseTracker(){
     try {
       const {rate:dateRate,usedDate,source}=await fetchRateWithFallback(form.currency,form.date,rateCache);
       const vendorName=form.vendor.trim();
-      const id=old?old.id:reviewing?Recurring.occurrenceId(reviewing.rootId,reviewing.dueDate):`${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      const id=old?old.id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
       const entry={...(old||{}),id,date:form.date,amount:amt,currency:form.currency,vendor:vendorName,category:form.category,
         comments:form.comments.trim(),submittedBy:form.submittedBy.trim(),receipt:form.receipt,amountCAD:amt*dateRate,
         rate:dateRate,rateDate:usedDate,rateSource:source,updatedAt:Date.now()};
       if(!old) Object.assign(entry,{status:"Pending",approvedBy:null,approvedAt:null,createdAt:Date.now()});
       if(schedule) entry.recurrence=schedule;
-      if(reviewing) Object.assign(entry,{recurrenceId:reviewing.rootId,scheduledDate:reviewing.dueDate});
-      if(reviewing || schedule || (old&&old.recurrence)) await saveRecurringEntry(entry,old,reviewing);
+      if(schedule || (old&&old.recurrence)) await saveRecurringEntry(entry,old);
       else await writeEntry(entry);
       if(source==="exact" || source==="nearby") updateRateCache(form.currency,dateRate,usedDate);
       if(!vendors.includes(vendorName)) addVendorToList(vendorName);
       const justUsedSubmittedBy=form.submittedBy.trim();
       if(justUsedSubmittedBy){setDefaultSubmittedBy(justUsedSubmittedBy);save(LS.submittedBy,justUsedSubmittedBy);}
-      const wasReview=!!reviewing;
       setForm(emptyForm(justUsedSubmittedBy||defaultSubmittedBy,categories[0]));
-      setSubmittedByTouched(false);setEditingId(null);setReviewing(null);
-      let savedMessage=wasReview?"Expense added — next scheduled date updated":schedule&&schedule.enabled?"Expense saved — "+Recurring.label(schedule).toLowerCase():old?"Expense updated":"Expense added";
+      setSubmittedByTouched(false);setEditingId(null);
+      let savedMessage=schedule&&schedule.enabled?"Expense saved — "+Recurring.label(schedule).toLowerCase():old?"Expense updated":"Expense added";
       if(source==="nearby") savedMessage+=" · closest available rate: "+usedDate;
       else if(source==="cached") savedMessage+=" · last known rate: "+usedDate;
       else if(source==="unknown") savedMessage+=" · 1:1 placeholder rate — edit later to fix";
       showToast(savedMessage);
-      if(wasReview) setTab("history");
       return true;
     } catch(err){
       setFormError(err.message || "Couldn't save. Your form is still here — try again.");
@@ -1490,10 +1504,51 @@ function ExpenseTracker(){
   }, [filtered, monthFilter, vendorFilter]);
   const histTotal = useMemo(()=> histFiltered.reduce((s,e)=>s+e.amountCAD,0), [histFiltered]);
 
-  const dueRecurring=entries.filter(en=>Recurring.active(en.recurrence)&&en.recurrence.nextDate<=localToday)
-    .sort((a,b)=>a.recurrence.nextDate.localeCompare(b.recurrence.nextDate));
+  autoContext.current={loaded,useCloud,netDown,merging,importing,pendingDelete,editingId};
+  function canAutoPost(context){
+    return autoContext.current && autoContext.current.useCloud===context.useCloud && autoContext.current.loaded &&
+      !autoContext.current.merging&&!autoContext.current.importing&&!autoContext.current.pendingDelete&&!autoContext.current.editingId&&
+      !submitLock.current && document.visibilityState!=="hidden" &&
+      (!cloudConfigured || (context.useCloud && !autoContext.current.netDown && navigator.onLine!==false));
+  }
+  useEffect(()=>{
+    const context=autoContext.current;
+    if(!canAutoPost(context)||autoPostLock.current)return;
+    const due=entriesRef.current.filter(x=>Recurring.active(x.recurrence)&&x.recurrence.nextDate<=localToday)
+      .sort((a,b)=>a.recurrence.nextDate.localeCompare(b.recurrence.nextDate));
+    if(!due.length){setAutoError("");return;}
+    const timer=setTimeout(async()=>{
+      if(!canAutoPost(context)||autoPostLock.current)return;
+      autoPostLock.current=true;clearTimeout(autoRetryTimer.current);
+      try{
+        const quotes=new Map();
+        const result=await Recurring.catchUp(due,localToday,{
+          keepGoing:()=>canAutoPost(context),
+          quote:async(currency,date)=>{
+            const key=currency+"|"+date;
+            if(!quotes.has(key)){
+              const fallback=rateCache[currency]?{rate:rateCache[currency].rate,usedDate:rateCache[currency].date,source:"cached"}:{rate:1,usedDate:null,source:"unknown"};
+              let timeout;
+              const rate=await Promise.race([fetchRateWithFallback(currency,date,rateCache),new Promise(resolve=>{timeout=setTimeout(()=>resolve(fallback),10000);})]).finally(()=>clearTimeout(timeout));
+              quotes.set(key,{...rate,currency});
+            }
+            return quotes.get(key);
+          },
+          post:postRecurringExpense,limit:50
+        });
+        setAutoError(result.errors.length?"Recurring expenses could not be saved yet. They will retry automatically. "+result.errors[0]:"");
+        if(result.posted)showToast(`Added ${result.posted} recurring ${result.posted===1?"expense":"expenses"}`);
+        if(result.more||result.errors.length)autoRetryTimer.current=setTimeout(()=>setAutoTick(n=>n+1),result.errors.length?30000:300);
+      }catch(err){
+        setAutoError("Recurring expenses will retry automatically. "+(err.message||"Could not save yet."));
+        autoRetryTimer.current=setTimeout(()=>setAutoTick(n=>n+1),30000);
+      }finally{autoPostLock.current=false;}
+    },250);
+    return ()=>clearTimeout(timer);
+  },[entries,loaded,localToday,autoTick,useCloud,netDown,merging,importing,pendingDelete,editingId,submitting]);
+
   let nextPreview="";
-  try{if(form.recurring&&!reviewing) nextPreview=Recurring.edited(editingId&&entries.find(x=>x.id===editingId)?.recurrence,
+  try{if(form.recurring) nextPreview=Recurring.edited(editingId&&entries.find(x=>x.id===editingId)?.recurrence,
     Recurring.spec(form.frequency,form.repeatEvery,form.repeatUnit,form.date),true).nextDate;}catch(e){}
 
   // ================================ render ================================
@@ -1502,11 +1557,10 @@ function ExpenseTracker(){
       {/* ------------------------------- NEW ------------------------------- */}
       {tab === "new" && (
         <div className="wrap">
-          <PageHead title={reviewing ? "Review" : editingId ? "Edit" : "New"} currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
+          <PageHead title={editingId ? "Edit" : "New"} currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
 
-          {dueRecurring.length>0 && !reviewing && !editingId && <div className="card recurring-due"><div className="recurring-note">{dueRecurring.length} recurring {dueRecurring.length===1?"expense is":"expenses are"} due for review.</div><button type="button" className="btn btn-soft" onClick={()=>setTab("history")}>Review due expenses</button></div>}
+          {autoError && <div className="card recurring-note" role="status">{autoError}</div>}
           <form onSubmit={submitAndReturn}>
-            {reviewing && <div className="card notice" style={{marginBottom:12,flexWrap:"wrap"}}><span className="recurring-note">Review the amount and date, then confirm. Receipt photos are added separately for each expense.</span><button type="button" className="linkbtn" onClick={()=>{cancelEdit();setTab("history");}}>Cancel review</button></div>}
             {editingId && (
               <div className="card notice" style={{marginBottom:12}}>
                 <span>Editing an existing expense.</span>
@@ -1631,19 +1685,19 @@ function ExpenseTracker(){
               <textarea rows={2} className="fld" placeholder="Optional notes" value={form.comments}
                 onChange={e=>setForm({...form, comments:e.target.value})} />
               <div style={{marginTop:20}}>
-                <label className="recurring-row"><input type="checkbox" checked={!!form.recurring} disabled={!!reviewing}
+                <label className="recurring-row"><input type="checkbox" checked={!!form.recurring}
                   aria-controls="recurring-options" aria-expanded={!!form.recurring} onChange={e=>setForm({...form,recurring:e.target.checked})} />Recurring expense</label>
                 {form.recurring && <div id="recurring-options" className="recurring-options">
                   <label className="lbl" htmlFor="repeat-frequency">Frequency</label>
-                  <select id="repeat-frequency" className="fld" value={form.frequency} disabled={!!reviewing} onChange={e=>setForm({...form,frequency:e.target.value})}>
+                  <select id="repeat-frequency" className="fld" value={form.frequency} onChange={e=>setForm({...form,frequency:e.target.value})}>
                     <option value="daily">Every day</option><option value="weekly">Every week</option><option value="fortnightly">Every 2 weeks</option>
                     <option value="monthly">Every month</option><option value="quarterly">Every 3 months</option><option value="yearly">Every year</option><option value="custom">Custom…</option>
                   </select>
                   {form.frequency==="custom" && <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                    <div style={{flex:"1 1 120px"}}><label className="lbl" htmlFor="repeat-every">Repeat every</label><input id="repeat-every" className="fld" type="number" inputMode="numeric" min="1" max="999" step="1" value={form.repeatEvery} disabled={!!reviewing} onChange={e=>setForm({...form,repeatEvery:e.target.value})} /></div>
-                    <div style={{flex:"1 1 150px"}}><label className="lbl" htmlFor="repeat-unit">Unit</label><select id="repeat-unit" className="fld" value={form.repeatUnit} disabled={!!reviewing} onChange={e=>setForm({...form,repeatUnit:e.target.value})}><option value="days">Days</option><option value="weeks">Weeks</option><option value="months">Months</option><option value="years">Years</option></select></div>
+                    <div style={{flex:"1 1 120px"}}><label className="lbl" htmlFor="repeat-every">Repeat every</label><input id="repeat-every" className="fld" type="number" inputMode="numeric" min="1" max="999" step="1" value={form.repeatEvery} onChange={e=>setForm({...form,repeatEvery:e.target.value})} /></div>
+                    <div style={{flex:"1 1 150px"}}><label className="lbl" htmlFor="repeat-unit">Unit</label><select id="repeat-unit" className="fld" value={form.repeatUnit} onChange={e=>setForm({...form,repeatUnit:e.target.value})}><option value="days">Days</option><option value="weeks">Weeks</option><option value="months">Months</option><option value="years">Years</option></select></div>
                   </div>}
-                  <div className="hint">{reviewing?"This amount and date apply to this expense only.":nextPreview?"Next due: "+nextPreview:"Choose a valid date and repeat interval."} Review each future expense before adding it.</div>
+                  <div className="hint">{nextPreview?"Next due: "+nextPreview:"Choose a valid date and repeat interval."} Future expenses are added automatically. You can edit them anytime.</div>
                 </div>}
                 {editingId && !form.recurring && entries.find(x=>x.id===editingId)?.recurrence && <div className="recurring-note">Save changes to turn repeating off. Recorded expenses remain.</div>}
               </div>
@@ -1652,7 +1706,7 @@ function ExpenseTracker(){
             {formError && <div className="card err" style={{marginBottom:12}}>{formError}</div>}
 
             <button type="submit" className="btn btn-primary" disabled={submitting}>
-              {submitting ? "Saving…" : reviewing ? "Confirm & add expense" : editingId ? "Save changes" : "Add expense"}
+              {submitting ? "Saving…" : editingId ? "Save changes" : "Add expense"}
             </button>
           </form>
         </div>
@@ -1662,17 +1716,7 @@ function ExpenseTracker(){
       {tab === "history" && (
         <div className="wrap">
           <PageHead title="History" currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
-          {dueRecurring.length>0 && <div className="card recurring-due">
-            <div className="cardtitle">Recurring expenses due</div>
-            <div className="recurring-note">Review one scheduled date at a time. Nothing is added automatically.</div>
-            {dueRecurring.map(root=><div className="due-item" key={root.id}>
-              <div className="recurring-note"><strong>{root.vendor}</strong> · {fmtAmount(root.amount,root.currency)}</div>
-              <div className="recurring-note">Due {root.recurrence.nextDate} · {Recurring.label(root.recurrence)}</div>
-              <button type="button" className="btn btn-soft" onClick={()=>reviewRecurring(root)}>Review & add</button>
-              <button type="button" className="linkbtn" style={{fontSize:20,marginTop:10}} onClick={()=>editFromHistory(root)}>Edit recurring expense</button>
-            </div>)}
-          </div>}
-
+          {autoError && <div className="card recurring-note" role="status">{autoError}</div>}
 
           {drillChip && (
             <button className="drillchip" onClick={clearDrill}>
@@ -1935,7 +1979,7 @@ function ExpenseTracker(){
           </div>
 
           <div style={{textAlign:"center", color:"var(--stamp)", fontSize:11, fontWeight:600, padding:"22px 0 4px"}}>
-            Expense Ledger · build v17
+            Expense Ledger · build v18
           </div>
         </div>
       )}

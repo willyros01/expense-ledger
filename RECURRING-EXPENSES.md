@@ -1,87 +1,90 @@
-# Expense Ledger — recurring expenses (build v16)
+# Expense Ledger — recurring expenses (build v18)
 
 Authorized 2026-11-10. Expense Ledger only; SpendRecorder remains unchanged.
 
 ## Use
 
-On New or Edit, tick **Recurring expense** below Comments. Choose Daily,
-Weekly, Every 2 weeks, Monthly, Every 3 months, Yearly, or Custom. Custom
-shows **Repeat every** (whole number 1–999) and Days / Weeks / Months / Years.
-Save the expense normally. The Date is the schedule's starting date.
+On **New** or **Edit**, tick **Recurring expense** below Comments. Choose Every
+day, Every week, Every 2 weeks, Every month, Every 3 months, Every year, or
+Custom. Custom shows **Repeat every** (whole number 1–999) and Days / Weeks /
+Months / Years. Save the expense normally. Its Date anchors the schedule.
 
-Due schedules appear in History and a banner appears on New. Tap **Review &
-add**, check the amount and expense date, attach that expense's receipt if
-needed, and confirm. Nothing posts automatically or changes totals before
-confirmation. Missed dates are reviewed individually in chronological order.
-Changes made while reviewing apply only to that occurrence. Edit the original
-recurring expense to change future amounts, dates or cadence. Untick recurring
-and save to stop repeating; previously recorded expenses remain. Deleting the
-original recurring expense also removes its schedule (the existing Undo works).
-Deleting a reviewed occurrence does not make its date due again.
+Recurring expenses are posted automatically while the app is open and visible,
+on opening/resuming, and when the cloud connection returns. All missed dates
+are caught up, with one recorded expense per scheduled date. There is no review
+panel, confirmation button or manual posting step. While the app is fully
+closed, posting waits until it next opens; no server scheduler is introduced.
 
-A monthly date on the 29th–31st uses the last available day in shorter months
-and returns to the original day in later months. Yearly February 29 behaves
-similarly. Local calendar dates determine when a schedule is due. No background
-job or notification service is introduced.
+Each posted expense can be edited normally. Editing a posted occurrence changes
+that record only. Edit the original recurring expense to change future amounts
+or frequency. Untick recurring and save to stop future posting; recorded
+expenses remain. Deleting the original also removes its schedule (the existing
+Undo remains available). Deleting a posted occurrence does not make its date
+due again. Receipt photos are not copied to future expenses.
 
-## Storage and synchronization
+Dates on the 29th–31st use the last day of shorter months, returning to the
+original day in later months. Yearly February 29 behaves similarly. The device's
+local calendar determines which dates are due. The app checks once a minute
+while visible, as well as on resume/focus/connection changes.
 
-The original expense document contains a `recurrence` object: enabled, unit,
-every, anchor, lastDate and nextDate. Existing entries need no migration.
-Reviewed entries use stable IDs `repeat-<original-id>-<scheduled-date>` and
-store recurrenceId and scheduledDate. Receipts are never copied forward.
+## Storage and duplicate prevention
 
-A shared-cloud confirmation uses a Firestore transaction: read the current
-schedule and occurrence, verify that the expected scheduled date is still due,
-then write the occurrence and advanced schedule together. Duplicate or stale
-reviews fail without overwriting an already recorded expense. Schedule edits
-also check that another device has not changed its progress. Shared recurring
-saves require a connection; failed saves leave the form available for retry.
-Manual Work offline mode does not allow reviews of shared schedules. New local
-schedules can be added in that mode and merge using their record IDs. In a
-local-only installation, the entire updated expense list is stored in one
-localStorage write before the screen changes; failure advances nothing.
+The original expense document contains `recurrence`: enabled, unit, every,
+anchor, lastDate and nextDate. Existing entries need no migration. Automatically
+posted entries use deterministic IDs `repeat-<original-id>-<scheduled-date>` and
+store recurrenceId, scheduledDate and autoPosted. Existing v16/v17 schedules are
+used directly; already-processed dates are not posted again.
 
-Editing the cadence calculates a next date after the latest reviewed scheduled
-date, preventing replay. Switching repeating off/on with unchanged dates keeps
-the saved next date; missed dates from that point remain available for review.
+Cloud posting reads the authoritative original and occurrence in one Firestore
+transaction, then writes the new expense and advances the schedule together.
+Concurrent devices, resume events and transaction retries cannot post the same
+date twice. If an imported stale schedule points to an existing occurrence, the
+pointer advances without overwriting that expense. A changed currency causes
+another rate lookup before posting. Amounts and future defaults come from the
+current original document. Ordinary status/vendor/category updates preserve the
+server's current recurrence progress.
 
-CSV, Excel and sharing exports retain scheduling identity and progress in a
-**Recurring Data** column. Import validates this metadata and skips duplicate
-record IDs. Export all entries to back up all schedules; an export filtered to
-only reviewed occurrences does not contain an omitted original schedule.
-Keep the metadata column intact if you intend to restore recurring schedules.
+Local-only posting reads and writes the complete committed snapshot inside a
+browser-wide Web Lock when supported. A failed storage write advances nothing.
+Shared-cloud posting pauses while disconnected or in manual Work offline mode,
+and catches up when online shared storage resumes. Local-only installations
+can post without connectivity. No pending user form is overwritten. Posting
+pauses while editing, saving, importing, merging or deleting with Undo.
 
-## Validation
+Catch-up processes up to 50 dates per pass and continues automatically in small
+chunks. Failures leave schedules due, show a readable message and retry
+automatically. Rate lookup uses the existing dated lookup/fallback behavior,
+with a 10-second bound for automatic posting; cached or placeholder rates keep
+the existing History rate indicator so entries can be corrected later.
 
-- `node --test tests/*.test.cjs`: date arithmetic, custom validation, edit/stop,
-  local/cloud commit paths, storage/write failures, duplicate/concurrent review,
-  stale edit and export/import metadata round-trips.
-- Cloud transaction tests use a serialized in-memory transaction store, not
-  production Firestore. No test expenses were written to the live database.
-- Isolated browser test using the real React screen and local-only storage:
-  enable Daily in Edit; review overdue date with changed amount; check schedule
-  advancement and original amount; edit to every 3 days; reload persistence;
-  stop repeating while retaining history; New form controls and ordinary entry.
-- JSX compilation and JavaScript syntax checks; service-worker cache bumped to
-  v16 and includes recurring.js. No Firebase rules, configuration or other app
-  repositories changed.
+CSV, Excel and sharing exports retain scheduling identity and progress in the
+**Recurring Data** column. Imports validate metadata and skip duplicate IDs.
+Export all entries to back up all schedules; an export filtered to occurrences
+alone cannot restore an omitted original schedule. Preserve this column when
+editing exports intended for restoration.
 
-## Build v17 correction — 2026-11-10
+The recurring script URL and service-worker pre-cache both use
+`recurring.js?v=18` to avoid an older cached engine.
 
-Turning repeating off could incorrectly report that another device changed the
-schedule. The edit transaction compared JSON strings, whose object field order
-could differ between a local Firestore snapshot and a server map. Firestore
-stores map keys in sorted order. The new comparison checks the flat map's full
-key set and values independently of insertion order. Real changed, missing or
-additional fields still trigger conflict protection.
+## Validation and limits
 
-A regression test first reproduced the exact reported error using differently
-ordered server fields, then passed with the correction. Additional assertions
-cover every schedule field, disabled state, next-date preservation, unchanged
-amount/history, real stale edits and duplicate confirmations. No user expense
-records are modified by the fix or its tests.
+`node --test tests/*.test.cjs` covers calendar/custom cadence, cloud map ordering,
+turning recurrence off, catch-up/chunking, duplicate and concurrent posting,
+write failure/retry, stale currency and schedule edits, disabled/deleted
+schedules, existing occurrences, preserved historical amounts and receipts,
+interrupting catch-up during editing/disconnection, and export/import metadata.
+Cloud transaction tests use a serialized in-memory store, not production
+Firestore. No test expense is written to the live database.
+
+Browser QA uses the real React screen with isolated local storage: opening adds
+three overdue dates automatically; reopening adds no duplicates; the review
+controls are absent; posted amounts remain editable; turning recurring off and
+reloading preserves both that choice and the recorded history. JSX compilation,
+JavaScript syntax and diff checks complete the release checks.
+
+## Previous correction retained (build v17)
+
+The first implementation incorrectly compared JSON insertion order for schedule
+maps, causing a false "changed on another device" error. Field-order-independent
+comparison remains in place, with reordered cloud-map regression tests.
 Reference: https://firebase.google.com/docs/firestore/manage-data/data-types
-
-The recurring script URL is versioned (`recurring.js?v=17`) and the same URL is
-pre-cached by the v17 service worker, avoiding an older browser-cached engine.

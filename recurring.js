@@ -1,5 +1,5 @@
 /* Expense Ledger recurrence dates. Calendar arithmetic uses UTC date-only values,
-   while today() uses the device's local calendar date. No timers post expenses. */
+   while today() uses the device's local calendar date. Posting is coordinated by the app while it is open. */
 (function(root,factory){
   const api=factory();
   if(typeof module==='object' && module.exports) module.exports=api;
@@ -47,16 +47,51 @@
   }
   function occurrenceId(rootId,due){date(due);return 'repeat-'+rootId+'-'+due;}
   function advance(root,due){
-    if(!root||!active(root.recurrence)||root.recurrence.nextDate!==due)throw Error('This scheduled date has already been reviewed or the schedule changed. Reopen it from History.');
+    if(!root||!active(root.recurrence)||root.recurrence.nextDate!==due)throw Error('This scheduled date has already been posted or the schedule changed. Reopen it from History.');
     return {...root,recurrence:{...root.recurrence,lastDate:due,nextDate:next(root.recurrence,due)}};
   }
   function edited(old,s,enabled){
     validate(s);
-    // A date/frequency change starts the new cadence after the latest reviewed
+    // A date/frequency change starts the new cadence after the latest posted
     // scheduled date, so it cannot re-offer already processed dates.
     const unchanged=old&&old.anchor===s.anchor&&old.unit===s.unit&&old.every===s.every;
     const after=old&&old.lastDate>s.anchor?old.lastDate:s.anchor;
     return {...s,enabled:!!enabled,lastDate:old&&old.lastDate||s.anchor,nextDate:unchanged&&old.nextDate?old.nextDate:next(s,after)};
   }
-  return {today,date,spec,preset,next,label,active,sameSchedule,occurrenceId,advance,edited};
+  function autoPost(root,due,quote,existing,now=Date.now()){
+    const advanced=advance(root,due);
+    if(!quote||quote.currency!==root.currency||!Number.isFinite(quote.rate)||quote.rate<=0)
+      throw Error('The currency changed or its exchange rate is invalid.');
+    if(!Number.isFinite(root.amount)||root.amount<=0)throw Error('Edit the recurring expense to correct its amount.');
+    const id=occurrenceId(root.id,due);
+    // Restore/import can leave a previously posted occurrence alongside an older
+    // nextDate. Advance that pointer without overwriting the historical expense.
+    const entry=existing?null:{id,date:due,amount:root.amount,currency:root.currency,vendor:root.vendor,
+      category:root.category,comments:root.comments||'',submittedBy:root.submittedBy||'',receipt:null,
+      amountCAD:root.amount*quote.rate,rate:quote.rate,rateDate:quote.usedDate,rateSource:quote.source,
+      status:'Pending',approvedBy:null,approvedAt:null,createdAt:now,updatedAt:now,
+      recurrenceId:root.id,scheduledDate:due,autoPosted:true};
+    return {root:{...advanced,updatedAt:now},entry};
+  }
+  async function catchUp(roots,cutoff,{quote,post,keepGoing=()=>true,limit=50}){
+    date(cutoff);
+    let posted=0,steps=0,more=false;const errors=[];
+    for(let root of roots){
+      try {
+        while(root&&active(root.recurrence)&&root.recurrence.nextDate<=cutoff){
+          if(!keepGoing()||steps>=limit){more=true;break;}
+          const due=root.recurrence.nextDate;
+          const rate=await quote(root.currency,due);
+          if(!keepGoing()){more=true;break;}
+          const result=await post(root.id,due,rate);
+          steps++;posted+=result.posted||0;
+          const previous=root;root=result.root;
+          if(root&&active(root.recurrence)&&root.recurrence.nextDate===due&&root.currency===previous.currency)
+            throw Error('The recurring schedule could not advance.');
+        }
+      } catch(e){errors.push(e.message||'Recurring expense could not be posted.');}
+    }
+    return {posted,more,errors};
+  }
+  return {today,date,spec,preset,next,label,active,sameSchedule,occurrenceId,advance,edited,autoPost,catchUp};
 });
