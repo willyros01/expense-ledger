@@ -24,7 +24,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
-<script src="recurring.js?v=18"></script>
+<script src="recurring.js?v=19"></script>
 
 <style>
   :root{
@@ -467,7 +467,7 @@ function RateMark({en}){
   return <span title={title} className="ratemark">≈</span>;
 }
 
-function ExpenseCard({en, selectMode, selected, onToggle, onEdit, onShare, onDelete, onPhoto, onStatus}){
+function ExpenseCard({en, series, selectMode, selected, onToggle, onEdit, onShare, onDelete, onPhoto, onStatus}){
   return (
     <div className="card expcard">
       <div className="exprow">
@@ -488,8 +488,8 @@ function ExpenseCard({en, selectMode, selected, onToggle, onEdit, onShare, onDel
         </div>
       </div>
       {en.comments && <div className="exp-note">{en.comments}</div>}
-      {en.recurrence && <div className="recurring-note">↻ {Recurring.label(en.recurrence)} · {en.recurrence.enabled ? "Next due: "+en.recurrence.nextDate : "Repeating off"}</div>}
-      {en.recurrenceId && !en.recurrence && <div className="recurring-note">Recurring expense</div>}
+      {series && series.latest ? <div className="recurring-note">↻ {Recurring.label(series.root.recurrence)} · {series.root.recurrence.enabled?"Next due: "+series.root.recurrence.nextDate:"Repeating off"}</div>
+        : (en.recurrence||en.recurrenceId) && <div className="recurring-note">Recurring expense</div>}
       <div className="btnrow">
         <button className="btn btn-soft" onClick={()=>onEdit(en)}>Edit</button>
         <button className="btn btn-soft" onClick={()=>onShare(en)}>Share</button>
@@ -527,6 +527,8 @@ function TabBar({tab, setTab}){
 
 function ExpenseTracker(){
   const [entries, setEntries] = useState([]);
+  const entriesById=useMemo(()=>new Map(entries.map(en=>[en.id,en])),[entries]);
+  const editSeriesRef=useRef(null);
   const [loaded, setLoaded] = useState(false);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [vendors, setVendors] = useState([]);
@@ -791,9 +793,43 @@ function ExpenseTracker(){
     }
   }
 
+  async function saveSeriesEntry(entry,context,settings){
+    const rootId=context.root.id;
+    const plan=(root,existing,ids)=>{
+      if(!existing)throw new Error("This expense was deleted. Reopen History.");
+      return Recurring.seriesEdit(root,entry,context.record,context.root.recurrence,context.latest,
+        settings.spec,settings.enabled,ids);
+    };
+    if(useCloud){
+      if(navigator.onLine===false)throw new Error("Reconnect to save changes to this recurring expense. Your form is still here.");
+      return db.runTransaction(async tx=>{
+        const rootRef=db.collection("expenses").doc(rootId),entryRef=db.collection("expenses").doc(entry.id);
+        const rootDoc=await tx.get(rootRef);
+        const entryDoc=entry.id===rootId?rootDoc:await tx.get(entryRef);
+        const root=rootDoc.exists?rootDoc.data():null;
+        const ids=new Set();
+        if(root&&root.recurrence&&!root.recurrence.latestId){
+          const id=Recurring.occurrenceId(rootId,root.recurrence.lastDate||root.recurrence.anchor);
+          const candidate=await tx.get(db.collection("expenses").doc(id));if(candidate.exists)ids.add(id);
+        }
+        const updates=plan(root,entryDoc.exists,ids);
+        updates.forEach(record=>tx.set(db.collection("expenses").doc(record.id),record));
+      });
+    }
+    const writeLocal=()=>{
+      const list=load(LS.expenses,[]).map(normalizeEntry),ids=new Set(list.map(x=>x.id));
+      const updates=plan(list.find(x=>x.id===rootId),ids.has(entry.id),ids);
+      const changed=new Map(updates.map(x=>[x.id,x]));
+      const next=list.map(x=>changed.get(x.id)||x);
+      if(!save(LS.expenses,next))throw new Error("Storage is full or unavailable. Nothing was saved.");
+      entriesRef.current=next;setEntries(next);
+    };
+    if(navigator.locks)await navigator.locks.request("expense-ledger-recurring",writeLocal);else writeLocal();
+  }
+
   async function postRecurringExpense(rootId,dueDate,quote){
     const makePlan=(root,existing)=>{
-      if(!root||!Recurring.active(root.recurrence)||root.recurrence.nextDate!==dueDate||root.currency!==quote.currency)
+      if(!root||!Recurring.active(root.recurrence)||root.recurrence.nextDate!==dueDate||Recurring.template(root).currency!==quote.currency)
         return {root,posted:0};
       const plan=Recurring.autoPost(root,dueDate,quote,existing);
       return {...plan,posted:plan.entry?1:0};
@@ -913,15 +949,21 @@ function ExpenseTracker(){
     setNewVendorText(""); setShowNewVendor(false);
   }
 
+  function seriesFor(entry){
+    const root=entry.recurrence?entry:entry.recurrenceId?entriesById.get(entry.recurrenceId):null;
+    return root&&root.recurrence?{root,latest:Recurring.latestId(root,entriesById)===entry.id}:null;
+  }
   function startEdit(entry){
+    const series=seriesFor(entry),schedule=series&&series.root.recurrence;
+    editSeriesRef.current=series?JSON.parse(JSON.stringify({...series,record:entry})):null;
     setEditingId(entry.id);
     setForm({ date:entry.date, amount:String(entry.amount), currency:entry.currency||"PHP", vendor:entry.vendor, category:entry.category, comments:entry.comments||"", submittedBy:entry.submittedBy||"", receipt:entry.receipt||null,
-      recurring:!!(entry.recurrence && entry.recurrence.enabled),frequency:entry.recurrence?Recurring.preset(entry.recurrence):"monthly",
-      repeatEvery:entry.recurrence?entry.recurrence.every:1,repeatUnit:entry.recurrence?entry.recurrence.unit:"days" });
+      recurring:!!(schedule&&schedule.enabled),frequency:schedule?Recurring.preset(schedule):"monthly",
+      repeatEvery:schedule?schedule.every:1,repeatUnit:schedule?schedule.unit:"days" });
     setShowNewVendor(false); setSubmittedByTouched(true); setFormError("");
     window.scrollTo({top:0,behavior:"smooth"});
   }
-  function cancelEdit(){ setEditingId(null); setForm(emptyForm(defaultSubmittedBy,categories[0])); setSubmittedByTouched(false); setFormError(""); }
+  function cancelEdit(){ editSeriesRef.current=null;setEditingId(null); setForm(emptyForm(defaultSubmittedBy,categories[0])); setSubmittedByTouched(false); setFormError(""); }
 
   async function handleReceiptChange(e){
     const file = e.target.files && e.target.files[0];
@@ -940,15 +982,18 @@ function ExpenseTracker(){
     const amt=Number(form.amount);
     if(!form.vendor.trim()){setFormError("Enter a vendor.");return false;}
     if(!Number.isFinite(amt)||amt<=0){setFormError("Enter an amount greater than zero.");return false;}
-    let schedule=null;
+    let schedule=null,seriesSettings=null;
+    const context=editingId?editSeriesRef.current:null;
     const old=editingId?entriesRef.current.find(en=>en.id===editingId):null;
     try {
       Recurring.date(form.date);
       if(editingId && !old) throw new Error("This expense no longer exists.");
-      if(form.recurring || (old && old.recurrence)){
-        const spec=form.recurring?Recurring.spec(form.frequency,form.repeatEvery,form.repeatUnit,form.date)
-          :{...old.recurrence,anchor:form.date};
-        schedule=Recurring.edited(old&&old.recurrence,spec,form.recurring);
+      if(context){
+        const r=context.root.recurrence;
+        const spec=context.latest&&form.recurring?Recurring.spec(form.frequency,form.repeatEvery,form.repeatUnit,form.date):{unit:r.unit,every:r.every,anchor:r.anchor};
+        seriesSettings={spec,enabled:form.recurring};
+      }else if(form.recurring){
+        schedule=Recurring.edited(null,Recurring.spec(form.frequency,form.repeatEvery,form.repeatUnit,form.date),true);
       }
     } catch(err){setFormError(err.message);return false;}
     submitLock.current=true;setSubmitting(true);setFormError("");
@@ -960,16 +1005,17 @@ function ExpenseTracker(){
         comments:form.comments.trim(),submittedBy:form.submittedBy.trim(),receipt:form.receipt,amountCAD:amt*dateRate,
         rate:dateRate,rateDate:usedDate,rateSource:source,updatedAt:Date.now()};
       if(!old) Object.assign(entry,{status:"Pending",approvedBy:null,approvedAt:null,createdAt:Date.now()});
-      if(schedule) entry.recurrence=schedule;
-      if(schedule || (old&&old.recurrence)) await saveRecurringEntry(entry,old);
+      if(schedule)entry.recurrence={...schedule,latestId:entry.id};
+      if(context)await saveSeriesEntry(entry,context,seriesSettings);
+      else if(schedule || (old&&old.recurrence)) await saveRecurringEntry(entry,old);
       else await writeEntry(entry);
       if(source==="exact" || source==="nearby") updateRateCache(form.currency,dateRate,usedDate);
       if(!vendors.includes(vendorName)) addVendorToList(vendorName);
       const justUsedSubmittedBy=form.submittedBy.trim();
       if(justUsedSubmittedBy){setDefaultSubmittedBy(justUsedSubmittedBy);save(LS.submittedBy,justUsedSubmittedBy);}
       setForm(emptyForm(justUsedSubmittedBy||defaultSubmittedBy,categories[0]));
-      setSubmittedByTouched(false);setEditingId(null);
-      let savedMessage=schedule&&schedule.enabled?"Expense saved — "+Recurring.label(schedule).toLowerCase():old?"Expense updated":"Expense added";
+      setSubmittedByTouched(false);setEditingId(null);editSeriesRef.current=null;
+      let savedMessage=context&&context.latest?"Expense and future postings updated":schedule&&schedule.enabled?"Expense saved — "+Recurring.label(schedule).toLowerCase():old?"Expense updated":"Expense added";
       if(source==="nearby") savedMessage+=" · closest available rate: "+usedDate;
       else if(source==="cached") savedMessage+=" · last known rate: "+usedDate;
       else if(source==="unknown") savedMessage+=" · 1:1 placeholder rate — edit later to fix";
@@ -1073,8 +1119,10 @@ function ExpenseTracker(){
     if(data.recurrence){
       const r=data.recurrence;Recurring.date(r.nextDate);Recurring.date(r.lastDate);
       result.recurrence=Recurring.edited(null,Recurring.spec("custom",r.every,r.unit,r.anchor),!!r.enabled);
-      if(r.nextDate<=r.lastDate||r.nextDate!==Recurring.next(result.recurrence,r.lastDate))throw new Error("Invalid recurring progress");
+      if(r.nextDate<=r.lastDate||r.nextDate!==Recurring.next(result.recurrence,r.lastDate>r.anchor?r.lastDate:r.anchor))throw new Error("Invalid recurring progress");
       Object.assign(result.recurrence,{nextDate:r.nextDate,lastDate:r.lastDate});
+      if(r.latestId){if(!validId(r.latestId))throw new Error("Invalid latest occurrence ID");result.recurrence.latestId=r.latestId;}
+      if(r.template)result.recurrence.template=Recurring.templateFields(r.template);
     }
     if(data.recurrenceId){
       if(!validId(data.recurrenceId))throw new Error("Invalid recurring parent ID");
@@ -1547,9 +1595,13 @@ function ExpenseTracker(){
     return ()=>clearTimeout(timer);
   },[entries,loaded,localToday,autoTick,useCloud,netDown,merging,importing,pendingDelete,editingId,submitting]);
 
+  const editSeries=editingId?editSeriesRef.current:null;
+  const pastSeries=!!(editSeries&&!editSeries.latest);
   let nextPreview="";
-  try{if(form.recurring) nextPreview=Recurring.edited(editingId&&entries.find(x=>x.id===editingId)?.recurrence,
-    Recurring.spec(form.frequency,form.repeatEvery,form.repeatUnit,form.date),true).nextDate;}catch(e){}
+  try{if(form.recurring){
+    const spec=Recurring.spec(form.frequency,form.repeatEvery,form.repeatUnit,form.date);
+    nextPreview=editSeries?Recurring.latestSchedule(editSeries.root,{...editSeries.record,date:form.date,amount:Number(form.amount),currency:form.currency,vendor:form.vendor,category:form.category,comments:form.comments,submittedBy:form.submittedBy},editSeries.record,spec,true).nextDate:Recurring.edited(null,spec,true).nextDate;
+  }}catch(e){}
 
   // ================================ render ================================
   return (
@@ -1685,21 +1737,23 @@ function ExpenseTracker(){
               <textarea rows={2} className="fld" placeholder="Optional notes" value={form.comments}
                 onChange={e=>setForm({...form, comments:e.target.value})} />
               <div style={{marginTop:20}}>
-                <label className="recurring-row"><input type="checkbox" checked={!!form.recurring}
+                <label className="recurring-row"><input type="checkbox" checked={!!form.recurring} disabled={pastSeries}
                   aria-controls="recurring-options" aria-expanded={!!form.recurring} onChange={e=>setForm({...form,recurring:e.target.checked})} />Recurring expense</label>
                 {form.recurring && <div id="recurring-options" className="recurring-options">
                   <label className="lbl" htmlFor="repeat-frequency">Frequency</label>
-                  <select id="repeat-frequency" className="fld" value={form.frequency} onChange={e=>setForm({...form,frequency:e.target.value})}>
+                  <select id="repeat-frequency" className="fld" value={form.frequency} disabled={pastSeries} onChange={e=>setForm({...form,frequency:e.target.value})}>
                     <option value="daily">Every day</option><option value="weekly">Every week</option><option value="fortnightly">Every 2 weeks</option>
                     <option value="monthly">Every month</option><option value="quarterly">Every 3 months</option><option value="yearly">Every year</option><option value="custom">Custom…</option>
                   </select>
                   {form.frequency==="custom" && <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                    <div style={{flex:"1 1 120px"}}><label className="lbl" htmlFor="repeat-every">Repeat every</label><input id="repeat-every" className="fld" type="number" inputMode="numeric" min="1" max="999" step="1" value={form.repeatEvery} onChange={e=>setForm({...form,repeatEvery:e.target.value})} /></div>
-                    <div style={{flex:"1 1 150px"}}><label className="lbl" htmlFor="repeat-unit">Unit</label><select id="repeat-unit" className="fld" value={form.repeatUnit} onChange={e=>setForm({...form,repeatUnit:e.target.value})}><option value="days">Days</option><option value="weeks">Weeks</option><option value="months">Months</option><option value="years">Years</option></select></div>
+                    <div style={{flex:"1 1 120px"}}><label className="lbl" htmlFor="repeat-every">Repeat every</label><input id="repeat-every" className="fld" type="number" inputMode="numeric" min="1" max="999" step="1" value={form.repeatEvery} disabled={pastSeries} onChange={e=>setForm({...form,repeatEvery:e.target.value})} /></div>
+                    <div style={{flex:"1 1 150px"}}><label className="lbl" htmlFor="repeat-unit">Unit</label><select id="repeat-unit" className="fld" value={form.repeatUnit} disabled={pastSeries} onChange={e=>setForm({...form,repeatUnit:e.target.value})}><option value="days">Days</option><option value="weeks">Weeks</option><option value="months">Months</option><option value="years">Years</option></select></div>
                   </div>}
-                  <div className="hint">{nextPreview?"Next due: "+nextPreview:"Choose a valid date and repeat interval."} Future expenses are added automatically. You can edit them anytime.</div>
+                  <div className="hint">{pastSeries?"Past occurrence: edits apply only to this record.":(nextPreview?"Next due: "+nextPreview+". ":"")+"Edits to the latest occurrence also update future postings. Earlier records stay unchanged."}</div>
                 </div>}
-                {editingId && !form.recurring && entries.find(x=>x.id===editingId)?.recurrence && <div className="recurring-note">Save changes to turn repeating off. Recorded expenses remain.</div>}
+                {editSeries&&editSeries.latest&&!form.recurring && <div className="recurring-note">Save changes to turn repeating off. Recorded expenses remain.</div>}
+                {pastSeries&&!form.recurring && <div className="recurring-note">Past occurrence: edits apply only to this record.</div>}
+                {editSeries&&editSeries.latest&&!form.recurring && <div className="recurring-note">This is the latest occurrence. Earlier records stay unchanged.</div>}
               </div>
             </div>
 
@@ -1764,7 +1818,7 @@ function ExpenseTracker(){
                 {entries.length===0 ? "No expenses yet. Add your first one from the New tab." : "Nothing matches your search or filters."}
               </div>
             ) : histFiltered.map(en=>(
-              <ExpenseCard key={en.id} en={en}
+              <ExpenseCard key={en.id} en={en} series={seriesFor(en)}
                 selectMode={selectMode} selected={!!selected[en.id]} onToggle={()=>toggleSelect(en.id)}
                 onEdit={editFromHistory} onShare={shareEntry} onDelete={deleteEntry}
                 onPhoto={setLightbox} onStatus={cycleStatus} />
@@ -1979,7 +2033,7 @@ function ExpenseTracker(){
           </div>
 
           <div style={{textAlign:"center", color:"var(--stamp)", fontSize:11, fontWeight:600, padding:"22px 0 4px"}}>
-            Expense Ledger · build v18
+            Expense Ledger · build v19
           </div>
         </div>
       )}
