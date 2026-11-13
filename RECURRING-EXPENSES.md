@@ -126,3 +126,5 @@ retaining the build v17 false-conflict correction. CSV/Excel exports and imports
 preserve both template defaults and latest identity.
 
 No test expense is written to production. Cloud tests simulate transactions.
+
+Typography update (2026-11-13): recurring controls reuse the existing label, field, checkbox, and hint styles across entry, edit, and history.

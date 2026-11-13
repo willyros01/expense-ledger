@@ -24,7 +24,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
-<script src="recurring.js?v=19"></script>
+<script src="recurring.js?v=20"></script>
 
 <style>
   :root{
@@ -196,11 +196,9 @@
   .undotrack{ height:3px; background:var(--toast-track); }
   .undofill{ height:100%; background:#FFB020; transition:width 100ms linear; }
 
-  .recurring-row{display:flex;align-items:center;gap:14px;font-size:23px;font-weight:700;min-height:56px;cursor:pointer;}
-  .recurring-row input{width:30px;height:30px;accent-color:var(--blue);flex-shrink:0;}
-  .recurring-options .fld{font-size:22px;min-height:54px;margin-top:8px;}
-  .recurring-options .lbl{font-size:21px;margin-top:14px;}
-  .recurring-options .hint,.recurring-note{font-size:19px;line-height:1.5;margin-top:10px;}
+  .recurring-row{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer;}
+  .recurring-options .lbl{margin-top:14px;}
+  .recurring-note{margin-top:10px;}
   .toast{ position:fixed; left:50%; transform:translateX(-50%); bottom:calc(78px + env(safe-area-inset-bottom));
     background:var(--toast-bg); color:var(--toast-fg); padding:11px 18px; border-radius:22px; font-size:14px; font-weight:600;
     z-index:46; max-width:calc(100% - 32px); text-align:center; }
@@ -488,8 +486,8 @@ function ExpenseCard({en, series, selectMode, selected, onToggle, onEdit, onShar
         </div>
       </div>
       {en.comments && <div className="exp-note">{en.comments}</div>}
-      {series && series.latest ? <div className="recurring-note">↻ {Recurring.label(series.root.recurrence)} · {series.root.recurrence.enabled?"Next due: "+series.root.recurrence.nextDate:"Repeating off"}</div>
-        : (en.recurrence||en.recurrenceId) && <div className="recurring-note">Recurring expense</div>}
+      {series && series.latest ? <div className="hint recurring-note">↻ {Recurring.label(series.root.recurrence)} · {series.root.recurrence.enabled?"Next due: "+series.root.recurrence.nextDate:"Repeating off"}</div>
+        : (en.recurrence||en.recurrenceId) && <div className="hint recurring-note">Recurring expense</div>}
       <div className="btnrow">
         <button className="btn btn-soft" onClick={()=>onEdit(en)}>Edit</button>
         <button className="btn btn-soft" onClick={()=>onShare(en)}>Share</button>
@@ -1611,7 +1609,7 @@ function ExpenseTracker(){
         <div className="wrap">
           <PageHead title={editingId ? "Edit" : "New"} currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
 
-          {autoError && <div className="card recurring-note" role="status">{autoError}</div>}
+          {autoError && <div className="card hint recurring-note" role="status">{autoError}</div>}
           <form onSubmit={submitAndReturn}>
             {editingId && (
               <div className="card notice" style={{marginBottom:12}}>
@@ -1737,7 +1735,7 @@ function ExpenseTracker(){
               <textarea rows={2} className="fld" placeholder="Optional notes" value={form.comments}
                 onChange={e=>setForm({...form, comments:e.target.value})} />
               <div style={{marginTop:20}}>
-                <label className="recurring-row"><input type="checkbox" checked={!!form.recurring} disabled={pastSeries}
+                <label className="lbl recurring-row"><input className="chk" type="checkbox" checked={!!form.recurring} disabled={pastSeries}
                   aria-controls="recurring-options" aria-expanded={!!form.recurring} onChange={e=>setForm({...form,recurring:e.target.checked})} />Recurring expense</label>
                 {form.recurring && <div id="recurring-options" className="recurring-options">
                   <label className="lbl" htmlFor="repeat-frequency">Frequency</label>
@@ -1751,9 +1749,9 @@ function ExpenseTracker(){
                   </div>}
                   <div className="hint">{pastSeries?"Past occurrence: edits apply only to this record.":(nextPreview?"Next due: "+nextPreview+". ":"")+"Edits to the latest occurrence also update future postings. Earlier records stay unchanged."}</div>
                 </div>}
-                {editSeries&&editSeries.latest&&!form.recurring && <div className="recurring-note">Save changes to turn repeating off. Recorded expenses remain.</div>}
-                {pastSeries&&!form.recurring && <div className="recurring-note">Past occurrence: edits apply only to this record.</div>}
-                {editSeries&&editSeries.latest&&!form.recurring && <div className="recurring-note">This is the latest occurrence. Earlier records stay unchanged.</div>}
+                {editSeries&&editSeries.latest&&!form.recurring && <div className="hint recurring-note">Save changes to turn repeating off. Recorded expenses remain.</div>}
+                {pastSeries&&!form.recurring && <div className="hint recurring-note">Past occurrence: edits apply only to this record.</div>}
+                {editSeries&&editSeries.latest&&!form.recurring && <div className="hint recurring-note">This is the latest occurrence. Earlier records stay unchanged.</div>}
               </div>
             </div>
 
@@ -1770,7 +1768,7 @@ function ExpenseTracker(){
       {tab === "history" && (
         <div className="wrap">
           <PageHead title="History" currency={displayCurrency} rate={liveRate} rateDate={liveRateDate} offline={offlineNote} />
-          {autoError && <div className="card recurring-note" role="status">{autoError}</div>}
+          {autoError && <div className="card hint recurring-note" role="status">{autoError}</div>}
 
           {drillChip && (
             <button className="drillchip" onClick={clearDrill}>
@@ -2033,7 +2031,7 @@ function ExpenseTracker(){
           </div>
 
           <div style={{textAlign:"center", color:"var(--stamp)", fontSize:11, fontWeight:600, padding:"22px 0 4px"}}>
-            Expense Ledger · build v19
+            Expense Ledger · build v20
           </div>
         </div>
       )}
