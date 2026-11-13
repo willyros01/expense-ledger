@@ -128,3 +128,4 @@ preserve both template defaults and latest identity.
 No test expense is written to production. Cloud tests simulate transactions.
 
 Typography update (2026-11-13): recurring controls reuse the existing label, field, checkbox, and hint styles across entry, edit, and history.
+The recurring label, frequency/custom controls, and help text use bold weight for visibility while retaining shared font sizes and colors.
