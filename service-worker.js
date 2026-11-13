@@ -5,12 +5,12 @@
 // the home screen. Network-first means you always get the latest version
 // when you have a connection, and only fall back to the cache if you're
 // genuinely offline.
-const CACHE_NAME = "expense-ledger-v20";
+const CACHE_NAME = "expense-ledger-v21";
 const SHELL_FILES = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./recurring.js?v=20",
+  "./recurring.js?v=21",
 ];
 
 self.addEventListener("install", (event) => {
