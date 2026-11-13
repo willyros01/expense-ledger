@@ -24,7 +24,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
-<script src="recurring.js?v=21"></script>
+<script src="recurring.js?v=22"></script>
 
 <style>
   :root{
@@ -196,9 +196,9 @@
   .undotrack{ height:3px; background:var(--toast-track); }
   .undofill{ height:100%; background:#FFB020; transition:width 100ms linear; }
 
-  .recurring-row{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer;font-weight:700;}
-  .recurring-options .lbl{margin-top:14px;font-weight:700;}
-  .recurring-options .fld,.recurring-options .hint,.recurring-note{font-weight:700;}
+  .recurring-row{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer;font-size:16px;font-weight:700;color:var(--ink);}
+  .recurring-options .lbl{margin-top:14px;font-size:16px;font-weight:700;color:var(--ink);}
+  .recurring-options .fld,.recurring-options .hint,.recurring-note{font-size:16px;font-weight:700;color:var(--ink);}
   .recurring-note{margin-top:10px;}
   .toast{ position:fixed; left:50%; transform:translateX(-50%); bottom:calc(78px + env(safe-area-inset-bottom));
     background:var(--toast-bg); color:var(--toast-fg); padding:11px 18px; border-radius:22px; font-size:14px; font-weight:600;
@@ -2032,7 +2032,7 @@ function ExpenseTracker(){
           </div>
 
           <div style={{textAlign:"center", color:"var(--stamp)", fontSize:11, fontWeight:600, padding:"22px 0 4px"}}>
-            Expense Ledger · build v21
+            Expense Ledger · build v22
           </div>
         </div>
       )}
