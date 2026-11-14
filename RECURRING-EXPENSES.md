@@ -131,3 +131,5 @@ Typography update (2026-11-13): recurring controls reuse the existing label, fie
 The recurring label, frequency/custom controls, and help text use bold weight for visibility while retaining shared font sizes and colors.
 
 2026-11-13 correction: recurring text matches the 16px vendor/name field VALUE text (not 13px muted field labels). Recurring label, frequency/custom labels and fields, and explanatory text are bold 700 with the main text color.
+
+2026-11-14 — Recurring text now uses normal weight (400), matching vendor field values, with the existing 16px size and main text color. Applies to entry, edit, frequency/custom controls, and notes on web, iOS and Android. Supersedes the earlier bold styling request.
